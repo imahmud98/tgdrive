@@ -1841,7 +1841,8 @@
 .db-sub-title{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--mute);}
 .db-user-pill{display:flex;align-items:center;gap:8px;padding:7px 9px;border-radius:8px;background:#F8FAFB;border:1px solid var(--bdr);margin-bottom:5px;}
 .db-user-pill:last-child{margin-bottom:0;}
-.db-user-av{width:27px;height:27px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;}
+.db-user-av{width:27px;height:27px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#fff;overflow:hidden;position:relative;}
+.db-user-av img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;}
 .db-av-t{background:linear-gradient(135deg,var(--p),var(--acd));}
 .db-av-g{background:linear-gradient(135deg,#16A34A,#22C55E);}
 .db-av-a{background:linear-gradient(135deg,#D97706,#F59E0B);}
@@ -14455,9 +14456,20 @@ function dbRenderUserList(type){
     return;
   }
 
+  function dbMemberAvatarHtml(u, i){
+    var initials = dbInitials(u.username || u);
+    var avatarUrl = String((u && u.avatar_url) || '');
+    var cls = 'db-user-av ' + dbAvCls(i);
+    if(!avatarUrl) return '<div class="' + cls + '">' + initials + '</div>';
+    return '<div class="' + cls + '">'
+      + '<span>' + initials + '</span>'
+      + "<img src=\"" + esc(avatarUrl) + "\" alt=\"\" loading=\"lazy\" decoding=\"async\" onerror=\"this.remove()\">"
+      + '</div>';
+  }
+
   el.innerHTML = list.map(function(u, i){
     return '<div class="db-user-pill">'
-      + '<div class="db-user-av ' + dbAvCls(i) + '">' + dbInitials(u.username || u) + '</div>'
+      + dbMemberAvatarHtml(u, i)
       + '<div style="flex:1;min-width:0">'
       + '<div style="font-size:13px;font-weight:500;color:var(--txt);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + esc(u.username || u) + '</div>'
       + '<div style="font-size:11px;color:var(--mute)">' + (type==='nas'?'NAS':'Cloud') + ' Member</div>'
