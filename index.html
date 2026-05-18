@@ -10690,13 +10690,8 @@ function sharedSelectedItems(){
 function renderSharedSelBar(){
   const selected=S.sharedSelectedIds||(S.sharedSelectedIds=new Set());
   const n=selected.size;
-  const all=(S.sharedWithMe||[]).length>0&&(S.sharedWithMe||[]).every(item=>selected.has(String(item.id)));
-  const selectBtn=document.getElementById('shared-tb-select');
   const dlBtn=document.getElementById('shared-tb-download');
-  const clearBtn=document.getElementById('shared-tb-clear');
-  if(selectBtn){selectBtn.classList.toggle('active',all);selectBtn.title=all?'Unselect all shared files':'Select all shared files';}
   if(dlBtn){dlBtn.disabled=n===0;dlBtn.classList.toggle('active',n>0);}
-  if(clearBtn){clearBtn.disabled=n===0;clearBtn.classList.toggle('active',n>0);}
   const bar=document.getElementById('shared-sel-bar');
   if(!bar)return;
   if(!n){
@@ -12969,20 +12964,14 @@ async function revokeShare(shareId) {
 
       <div id="section-shared" class="app-section hidden flex-1 flex flex-col overflow-hidden">
         <div class="drive-tb">
-          <div class="tb-left"><div class="text-sm" style="color:var(--sub);font-weight:700;">Shared with me</div></div>
+          <div class="tb-left"><div class="text-sm" style="color:var(--p);font-weight:800;font-size:26px;">Shared with me</div></div>
           <div class="tb-right">
-            <button id="shared-tb-select" class="tb-act" data-click="sharedSelAll()" title="Select all shared files">
-              <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="2.5" width="11" height="11" rx="2" stroke="currentColor" stroke-width="1.4"/><path d="M5 8.2l2 2 4-4.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </button>
             <button id="shared-tb-download" class="tb-act" data-click="downloadSelectedShared()" title="Download selected shared files" disabled>
-              <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 2v7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M5 6.5 8 9.5l3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M3.5 12.5h9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-            </button>
-            <button id="shared-tb-clear" class="tb-act" data-click="clearSharedSel()" title="Clear shared selection" disabled>
-              <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
-            </button>
-            <div class="tb-divider"></div>
-            <button class="tb-act" data-click="loadSharedWithMe()" title="Refresh shared files">
-              <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M13 7a5 5 0 1 0-1.5 3.6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" fill="none"/><path d="M13 3.5V7h-3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+                <line x1="8" y1="2" x2="8" y2="11" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+                <polyline points="4.5,7.5 8,11 11.5,7.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+                <line x1="2" y1="14" x2="14" y2="14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+              </svg>
             </button>
             <div class="tb-divider"></div>
             <div class="vt-wrap">
