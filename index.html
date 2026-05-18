@@ -10127,7 +10127,7 @@ async function runDownloads(dirHandle){
       item.status='done';item.progress=1;
     }catch(e){
       if(e.name==='AbortError'||e.message==='Download cancelled')item.status='cancelled';
-      else{item.status='error';item.error=e.message;}
+      else{item.status='error';item.error=userSafeErrorMessage(e,'Download failed. Please retry.');}
     }
     renderDownloadQ();
     await new Promise(r=>setTimeout(r,300));
@@ -10144,7 +10144,7 @@ function _fetchOnce(url,headers,onProgress){
       headers,
       cache: 'no-store',
     })).then(async res => {
-      if(!res.ok) throw new Error(`HTTP ${res.status}`);
+      if(!res.ok) throw new Error(transportErrorMessage(res.status));
       onProgress(1);
       const blob = await res.blob();
       return {blob:()=>Promise.resolve(blob)};
@@ -10160,7 +10160,7 @@ function _fetchOnce(url,headers,onProgress){
     xhr.onprogress=e=>{if(e.lengthComputable)onProgress(e.loaded/e.total);};
     xhr.onload=()=>{
       if(xhr.status===200)resolve({blob:()=>Promise.resolve(xhr.response)});
-      else reject(new Error(`HTTP ${xhr.status}`));
+      else reject(new Error(transportErrorMessage(xhr.status)));
     };
     xhr.onerror=()=>reject(new Error('Network error'));
     xhr.onabort=()=>reject(new Error('Download cancelled'));
