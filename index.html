@@ -111,8 +111,12 @@
     .hd-dd-wrap{position:relative;}
     .hd-dd-trigger{width:40px;height:40px;border:none;background:transparent;border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#5F6368;transition:background .12s;line-height:0;}
     .hd-dd-trigger:hover{background:#F1F3F4;}
-    .hd-avatar-btn{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--p),var(--acd));border:none;cursor:pointer;color:#fff;font-size:13px;font-weight:700;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:opacity .12s;}
+    .hd-avatar-btn{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,var(--p),var(--acd));border:none;cursor:pointer;color:#fff;font-size:13px;font-weight:700;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:opacity .12s;overflow:hidden;position:relative;}
     .hd-avatar-btn:hover{opacity:.88;}
+    .hd-avatar-btn .hd-avatar-img{width:100%;height:100%;object-fit:cover;border-radius:inherit;display:none;}
+    .hd-avatar-btn.has-photo{background:#E6FFFA;border:1px solid rgba(20,184,166,.38);padding:0;}
+    .hd-avatar-btn.has-photo .hd-avatar-img{display:block;}
+    .hd-avatar-btn.has-photo #hd-avatar-initial{display:none;}
     .hd-dropdown{position:absolute;top:calc(100% + 6px);right:0;background:#fff;border:1px solid #E3E6EA;border-radius:12px;box-shadow:0 4px 24px rgba(0,0,0,.13);overflow:hidden;z-index:800;min-width:196px;display:none;animation:fi .12s ease;}
     .hd-dropdown.open{display:block;}
     .hd-dd-head{padding:10px 16px 4px;font-size:10.5px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:#9AA0A6;}
@@ -1195,7 +1199,18 @@
     }
 
     /* Ã¢"â‚¬Ã¢"â‚¬ PROFILE MODAL Ã¢"â‚¬Ã¢"â‚¬ */
-    #profile-modal .modal-box{max-width:380px;}
+    #profile-modal .modal-box{max-width:460px;}
+    .profile-avatar-panel{display:flex;gap:16px;align-items:center;padding:14px;border:1px solid rgba(20,184,166,.22);background:linear-gradient(135deg,#F0FDFA 0%,#FFFFFF 62%);border-radius:18px;}
+    .profile-avatar-preview{width:88px;height:88px;border-radius:50%;border:2px solid rgba(20,184,166,.32);background:linear-gradient(135deg,var(--p),var(--acd));display:flex;align-items:center;justify-content:center;color:#fff;font-size:28px;font-weight:800;overflow:hidden;flex-shrink:0;box-shadow:0 12px 26px rgba(20,184,166,.16);}
+    .profile-avatar-preview img{width:100%;height:100%;object-fit:cover;display:none;}
+    .profile-avatar-preview.has-photo{background:#E6FFFA;}
+    .profile-avatar-preview.has-photo img{display:block;}
+    .profile-avatar-preview.has-photo span{display:none;}
+    .profile-avatar-copy{min-width:0;flex:1;}
+    .profile-avatar-title{font-size:15px;font-weight:800;color:#183047;margin-bottom:3px;}
+    .profile-avatar-hint{font-size:12.5px;color:#6B7280;line-height:1.4;margin:5px 0 10px;}
+    .profile-avatar-upload{height:36px;padding:0 13px;border-radius:10px;color:var(--p);border-color:rgba(20,184,166,.32);background:#fff;}
+    .profile-avatar-upload:hover{background:#ECFDF5;}
 
     /* Ã¢"â‚¬Ã¢"â‚¬ MOBILE NAV DRAWER Ã¢"â‚¬Ã¢"â‚¬ */
     #mobile-nav-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:900;opacity:0;transition:opacity .2s;}
@@ -10978,9 +10993,7 @@ function renderUserInfo(){
       ${tierLabel}
     </span>`;
 
-  // Avatar initial in profile button
-  const av=document.getElementById('hd-avatar-initial');
-  if(av) av.textContent=initial;
+  _renderAccountAvatar(initial);
 
   // Profile dropdown name label
   const nl=document.getElementById('hd-dd-name-label');
@@ -13073,6 +13086,7 @@ async function revokeShare(shareId) {
         <button class="hd-avatar-btn" id="hd-avatar-btn"
                 data-click="hdToggleDd('profile',event)"
                 title="Profile" aria-haspopup="true" aria-expanded="false">
+          <img id="hd-avatar-img" class="hd-avatar-img" alt="" decoding="async" loading="lazy">
           <span id="hd-avatar-initial">U</span>
         </button>
         <div class="hd-dropdown" id="hd-dd-profile" role="menu">
@@ -14874,13 +14888,25 @@ document.addEventListener('DOMContentLoaded', function(){
      MODAL: EDIT PROFILE
 Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â -->
 <div id="profile-modal" class="modal-wrap hidden">
-  <div class="modal-box" style="max-width:380px">
+  <div class="modal-box" style="max-width:460px">
     <div class="modal-hd">
       <span class="modal-title">Edit Profile</span>
       <button class="modal-close" data-click="hideModal('profile-modal')" aria-label="Close" title="Close"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
     </div>
     <div class="p-5 space-y-4">
       <div id="ep-err" class="hidden text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-3 py-2"></div>
+      <div class="profile-avatar-panel">
+        <div id="ep-avatar-preview" class="profile-avatar-preview" aria-hidden="true">
+          <img id="ep-avatar-img" alt="" decoding="async">
+          <span id="ep-avatar-initial">U</span>
+        </div>
+        <div class="profile-avatar-copy">
+          <div class="profile-avatar-title">Profile picture</div>
+          <div class="profile-avatar-hint">JPG or PNG only. Pockio crops it to a 256 x 256 square before upload.</div>
+          <input id="ep-avatar-file" type="file" accept="image/jpeg,image/png" class="hidden" onchange="handleProfileAvatarPicked(event)">
+          <button type="button" class="btn-secondary profile-avatar-upload" data-click="document.getElementById('ep-avatar-file')?.click()">Choose image</button>
+        </div>
+      </div>
       <!-- Read-only fields -->
       <div>
         <label class="f-label">Username <span style="color:#aaa;font-weight:400">(cannot change)</span></label>
@@ -15221,6 +15247,106 @@ if(!S._sort) S._sort='name';
 // Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
 // EDIT PROFILE
 // Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+const PROFILE_AVATAR_SIZE = 256;
+function _accountAvatarSrc(url){
+  const raw=String(url||'').trim();
+  if(!raw)return '';
+  if(/^(https?:|data:|blob:)/i.test(raw))return raw;
+  return (API||'')+raw;
+}
+function _renderAccountAvatar(initial){
+  const btn=document.getElementById('hd-avatar-btn');
+  const img=document.getElementById('hd-avatar-img');
+  const av=document.getElementById('hd-avatar-initial');
+  if(av) av.textContent=initial||'U';
+  const src=_accountAvatarSrc(S.user?.avatar_url||'');
+  if(img&&btn&&src){
+    img.src=src;
+    btn.classList.add('has-photo');
+  }else if(img&&btn){
+    img.removeAttribute('src');
+    btn.classList.remove('has-photo');
+  }
+}
+function _profileAvatarInitial(){
+  return String(S.user?.full_name||S.user?.username||'U').trim().slice(0,1).toUpperCase()||'U';
+}
+function _profileAvatarError(message){
+  const errEl=document.getElementById('ep-err');
+  if(errEl){errEl.textContent=message;errEl.classList.remove('hidden');}
+}
+function _renderProfileAvatarPreview(){
+  const box=document.getElementById('ep-avatar-preview');
+  const img=document.getElementById('ep-avatar-img');
+  const initial=document.getElementById('ep-avatar-initial');
+  if(initial) initial.textContent=_profileAvatarInitial();
+  const src=S._profileAvatarPreviewUrl||_accountAvatarSrc(S.user?.avatar_url||'');
+  if(box&&img&&src){
+    img.src=src;
+    box.classList.add('has-photo');
+  }else if(box&&img){
+    img.removeAttribute('src');
+    box.classList.remove('has-photo');
+  }
+}
+function _resetProfileAvatarPicker(){
+  if(S._profileAvatarPreviewUrl){
+    try{URL.revokeObjectURL(S._profileAvatarPreviewUrl);}catch(_){ }
+  }
+  S._profileAvatarPreviewUrl='';
+  S._profileAvatarBlob=null;
+  const input=document.getElementById('ep-avatar-file');
+  if(input) input.value='';
+}
+function _loadImageFromFile(file){
+  return new Promise((resolve,reject)=>{
+    const url=URL.createObjectURL(file);
+    const img=new Image();
+    img.onload=()=>{URL.revokeObjectURL(url);resolve(img);};
+    img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('Could not read that image.'));};
+    img.src=url;
+  });
+}
+async function handleProfileAvatarPicked(event){
+  const file=event?.target?.files?.[0];
+  if(!file)return;
+  const type=String(file.type||'').toLowerCase();
+  if(!['image/jpeg','image/png'].includes(type)){
+    _profileAvatarError('Only JPG, JPEG, and PNG profile pictures are accepted.');
+    event.target.value='';
+    return;
+  }
+  if(file.size>5*1024*1024){
+    _profileAvatarError('Profile picture must be 5 MB or smaller.');
+    event.target.value='';
+    return;
+  }
+  try{
+    const img=await _loadImageFromFile(file);
+    const side=Math.min(img.naturalWidth||img.width,img.naturalHeight||img.height);
+    if(!side)throw new Error('Could not read that image.');
+    const sx=((img.naturalWidth||img.width)-side)/2;
+    const sy=((img.naturalHeight||img.height)-side)/2;
+    const canvas=document.createElement('canvas');
+    canvas.width=PROFILE_AVATAR_SIZE;
+    canvas.height=PROFILE_AVATAR_SIZE;
+    const ctx=canvas.getContext('2d',{alpha:false});
+    ctx.fillStyle='#fff';
+    ctx.fillRect(0,0,PROFILE_AVATAR_SIZE,PROFILE_AVATAR_SIZE);
+    ctx.drawImage(img,sx,sy,side,side,0,0,PROFILE_AVATAR_SIZE,PROFILE_AVATAR_SIZE);
+    const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/jpeg',0.9));
+    if(!blob)throw new Error('Could not prepare that image.');
+    if(S._profileAvatarPreviewUrl){try{URL.revokeObjectURL(S._profileAvatarPreviewUrl);}catch(_){ }}
+    S._profileAvatarBlob=blob;
+    S._profileAvatarPreviewUrl=URL.createObjectURL(blob);
+    document.getElementById('ep-err')?.classList.add('hidden');
+    _renderProfileAvatarPreview();
+  }catch(err){
+    _profileAvatarError(err.message||'Could not prepare that profile picture.');
+  }
+}
+window.handleProfileAvatarPicked=handleProfileAvatarPicked;
+
 // Populate read-only fields when modal opens
 document.addEventListener('DOMContentLoaded',()=>{
   const pmBtn=document.getElementById('hd-avatar-btn');
@@ -15238,10 +15364,13 @@ function _openProfileModal(){
   if(epE) epE.value=u.email||'';
   if(epN) epN.value=u.full_name||'';
   if(epP) epP.value=u.phone||'';
+  _resetProfileAvatarPicker();
+  _renderProfileAvatarPreview();
   document.getElementById('ep-err')?.classList.add('hidden');
   const btn=document.getElementById('ep-save-btn');
   if(btn){btn.disabled=false;btn.textContent='Save changes';}
 }
+
 
 // Intercept showModal to populate profile modal
 const _origShowModal=window.showModal;
@@ -15265,8 +15394,20 @@ async function handleSaveProfile(){
   try{
     // PATCH /user/profile - only send mutable fields
     const result=await api('PATCH','/user/profile',{full_name:fullname,phone});
+    let avatarResult=null;
+    if(S._profileAvatarBlob){
+      btn.textContent='Uploading photo...';
+      const form=new FormData();
+      form.append('avatar',S._profileAvatarBlob,'profile.jpg');
+      avatarResult=await api('POST','/user/avatar',form,true);
+    }
     if(result){
-      S.user={...(S.user||{}),full_name:fullname,phone};
+      S.user={...(S.user||{}),...result,full_name:fullname,phone};
+      if(avatarResult?.avatar_url){
+        S.user.avatar_url=avatarResult.avatar_url;
+        S.user.avatar_updated_at=avatarResult.avatar_updated_at;
+      }
+      _resetProfileAvatarPicker();
       renderUserInfo();
       hideModal('profile-modal');
       if(typeof toast==='function') toast('Profile updated','success');
