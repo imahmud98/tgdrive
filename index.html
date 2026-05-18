@@ -2414,17 +2414,12 @@
 #view-app .file-row:hover,#view-app .folder-chip:hover,#view-app .list-row:hover{border-color:rgba(20,184,166,.11) !important;box-shadow:var(--pk-shadow-lift) !important;}
 #view-app .file-list-header,#view-app th{background:transparent !important;border-color:var(--pk-line-soft) !important;color:#718094 !important;font-size:10.5px !important;letter-spacing:.5px !important;}
 #view-app #drop-zone,#view-app #cloud-drop-zone,#view-app .upload-zone,#view-app .empty-state{border-color:rgba(20,184,166,.20) !important;background:linear-gradient(180deg,rgba(255,255,255,.90),rgba(240,253,250,.70)) !important;box-shadow:0 10px 26px rgba(15,118,110,.055),inset 0 1px 0 rgba(255,255,255,.80) !important;}
-/* Pockio Cloud tab parity with My Files */
-#view-app #section-cloud .drive-tb{background:#f8f9fa !important;border-bottom:0 !important;padding:20px 24px 8px !important;min-height:72px !important;align-items:center !important;box-shadow:none !important;}
-#view-app #section-cloud .tb-left{min-width:180px !important;}
-#view-app #cloud-breadcrumb{font-family:"Poppins",system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif !important;font-size:22px !important;font-weight:500 !important;line-height:1.2 !important;color:#0f766e !important;gap:4px !important;letter-spacing:0 !important;}
-#view-app #cloud-breadcrumb span:first-child{font-weight:500 !important;color:#0f766e !important;}
+/* Cloud reuses the same browser chrome as My Drive. */
 #view-app #shared-breadcrumb{font-family:"Poppins",system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif !important;font-size:22px !important;font-weight:500 !important;line-height:1.2 !important;color:#0f766e !important;gap:4px !important;letter-spacing:0 !important;}
-#view-app #cloud-drop-zone{margin:0 24px 24px !important;padding:8px 24px 24px !important;background:#f8f9fa !important;border:1px dashed rgba(20,184,166,.28) !important;border-radius:18px !important;box-shadow:none !important;}
+#view-app #cloud-drop-zone{margin:0 !important;padding:24px !important;background:transparent !important;border:0 !important;border-radius:0 !important;box-shadow:none !important;}
 #view-app #cloud-files-label.gd-section-label{display:flex;align-items:center;justify-content:space-between;margin:12px 2px 8px !important;color:#5f6368 !important;font-size:11px !important;font-weight:700 !important;letter-spacing:.06em !important;text-transform:uppercase !important;}
 #view-app #cloud-files-label.gd-section-label .count{margin-left:auto;color:#9aa4b2 !important;font-size:12px !important;font-weight:500 !important;letter-spacing:0 !important;text-transform:none !important;}
 #view-app #cloud-file-list.grid-mode{grid-template-columns:repeat(auto-fill,minmax(160px,1fr)) !important;gap:10px !important;padding:12px !important;background:transparent !important;}
-#view-app #section-cloud .tb-act,#view-app #section-cloud .tb-sort-btn,#view-app #section-cloud .vt-btn{box-shadow:none !important;}
 #view-app .cloud-empty-panel{
   min-height:clamp(300px,52vh,560px);
   display:flex;
@@ -3542,8 +3537,8 @@ function setViewMode(mode){
   document.getElementById('view-btn-grid')?.classList.toggle('active-nav',mode==='grid');
   document.getElementById('cloud-vt-list')?.classList.toggle('active-nav',mode==='list');
   document.getElementById('cloud-vt-grid')?.classList.toggle('active-nav',mode==='grid');
-  renderFiles();
   if(S.activeSection==='cloud') renderCloudFileList();
+  else renderFiles();
 }
 
 function showSection(section){
@@ -3554,11 +3549,15 @@ function showSection(section){
     S.sharedSelectedIds.clear();
     renderSharedSelBar();
   }
+  if(S.activeSection==='cloud'&&section!=='cloud'&&_cloudSelIds){
+    _cloudSelIds.clear();
+    renderCloudSelBar();
+  }
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active-nav'));
   const btn=document.getElementById('nav-'+section);
   if(btn)btn.classList.add('active-nav');
   S.activeSection=section;
-  if(section==='drive'){hdSearchShowAll();}
+  if(section==='drive'){hdSearchShowAll();loadAll();}
   if(section==='dashboard'){loadDashboard();loadReferralCode();loadDashboardNew();}
   if(section==='licenses'){loadLicenses();}
   if(section==='cloud'){loadCloudFiles();}
@@ -4062,6 +4061,13 @@ async function moveSelectedToChosen(){
   }
   S.selectedIds.clear();
   hideModal('move-modal');
+  if(S._moveContext==='cloud'){
+    S._moveContext='';
+    _cloudSelIds.clear();
+    await loadCloudFiles();
+    toast(`${moved} item${moved===1?'':'s'} moved`,'success');
+    return;
+  }
   await loadAll();
   toast(`${moved} item${moved===1?'':'s'} moved`,'success');
 }
@@ -8802,6 +8808,360 @@ async function loadCloudFiles(){
   }
 }
 
+// Cloud tab: mirror My Drive with a cloud-only recursive folder/file view.
+var _cloudFolderChildren = new Map();
+var _cloudFilesByFolder = new Map();
+var _cloudFolderMap = new Map();
+var _cloudFolderHasCloud = new Set();
+
+function _cloudKey(folderId){ return folderId===null || folderId===undefined ? 'root' : String(folderId); }
+function _cloudCurrentId(){ return S.cloudCurrentFolder && S.cloudCurrentFolder.id!==undefined ? S.cloudCurrentFolder.id : null; }
+function cloudFolderSelId(id){ return 'cloud-folder:' + String(id); }
+function isCloudFolderSelId(id){ return String(id).startsWith('cloud-folder:'); }
+function cloudFolderIdFromSel(id){ return Number(String(id).slice(13)); }
+function cloudSelectedFolderIds(){ return [..._cloudSelIds].filter(isCloudFolderSelId).map(cloudFolderIdFromSel).filter(Number.isFinite); }
+function cloudSelectedFileIds(){ return [..._cloudSelIds].filter(id=>!isCloudFolderSelId(id)); }
+function _cloudSortValue(){
+  const sel=document.getElementById('cloud-sort-sel');
+  return sel ? sel.value : 'name-asc';
+}
+function _cloudVisibleFiles(){
+  const files=[...(S.cloudFiles||[])];
+  const sort=_cloudSortValue();
+  files.sort(function(a,b){
+    const an=a.name||a.filename||'', bn=b.name||b.filename||'';
+    if(sort==='date-desc') return new Date(b.captured_at||b.created_at||0)-new Date(a.captured_at||a.created_at||0);
+    if(sort==='date-asc') return new Date(a.captured_at||a.created_at||0)-new Date(b.captured_at||b.created_at||0);
+    if(sort==='name-desc') return bn.localeCompare(an);
+    if(sort==='size-desc') return (b.size||0)-(a.size||0);
+    if(sort==='size-asc') return (a.size||0)-(b.size||0);
+    return an.localeCompare(bn);
+  });
+  return files;
+}
+function _cloudApplyCurrentFolder(){
+  S.cloudFolderPath=S.cloudFolderPath||[];
+  if(S.cloudCurrentFolder && !_cloudFolderMap.has(String(S.cloudCurrentFolder.id))){
+    S.cloudCurrentFolder=null;
+    S.cloudFolderPath=[];
+  }
+  const key=_cloudKey(_cloudCurrentId());
+  S.cloudFolders=(_cloudFolderChildren.get(key)||[]).filter(f=>_cloudFolderHasCloud.has(String(f.id)));
+  S.cloudFiles=_cloudFilesByFolder.get(key)||[];
+}
+function renderCloudBreadcrumb(){
+  const el=document.getElementById('cloud-breadcrumb');
+  if(!el)return;
+  let h='<button data-click="cloudNav(-1)" class="text-teal-700 hover:underline font-medium">Cloud</button>';
+  (S.cloudFolderPath||[]).forEach((f,i)=>{
+    h+=' <span class="text-gray-400">/</span> ';
+    h+=i===S.cloudFolderPath.length-1
+      ? `<span class="text-gray-700 font-medium">${esc(f.name)}</span>`
+      : `<button data-click="cloudNav(${i})" class="text-teal-700 hover:underline">${esc(f.name)}</button>`;
+  });
+  el.innerHTML=h;
+}
+function cloudNav(i){
+  if(i===-1){S.cloudFolderPath=[];S.cloudCurrentFolder=null;}
+  else{S.cloudFolderPath=S.cloudFolderPath.slice(0,i+1);S.cloudCurrentFolder=S.cloudFolderPath[i];}
+  _cloudSelIds.clear();
+  _cloudApplyCurrentFolder();
+  renderCloudBrowser();
+}
+function cloudOpenFolderById(id){
+  const f=_cloudFolderMap.get(String(id));
+  if(!f)return;
+  S.cloudFolderPath=S.cloudFolderPath||[];
+  S.cloudFolderPath.push(f);
+  S.cloudCurrentFolder=f;
+  _cloudSelIds.clear();
+  _cloudApplyCurrentFolder();
+  renderCloudBrowser();
+}
+function cloudToggleFolderSel(id){
+  const sid=cloudFolderSelId(id);
+  _cloudSelIds.has(sid)?_cloudSelIds.delete(sid):_cloudSelIds.add(sid);
+  renderCloudFolders();
+  renderCloudSelBar();
+}
+function cloudToggleSel(id){
+  const sid=String(id);
+  _cloudSelIds.has(sid)?_cloudSelIds.delete(sid):_cloudSelIds.add(sid);
+  renderCloudFileList();
+  renderCloudSelBar();
+}
+function cloudSelAll(){
+  const files=_cloudVisibleFiles();
+  const all=files.length&&files.every(f=>_cloudSelIds.has(String(f.id)));
+  files.forEach(f=>all?_cloudSelIds.delete(String(f.id)):_cloudSelIds.add(String(f.id)));
+  renderCloudFileList();
+  renderCloudSelBar();
+}
+function cloudClearSel(){
+  _cloudSelIds.clear();
+  renderCloudFileList();
+  renderCloudFolders();
+  renderCloudSelBar();
+}
+function renderCloudSelBar(){
+  const el=document.getElementById('cloud-sel-bar');
+  const cnt=_cloudSelIds.size;
+  const folderCnt=cloudSelectedFolderIds().length;
+  const fileCnt=cnt-folderCnt;
+  ['cloud-tb-download','cloud-tb-share','cloud-tb-move','cloud-tb-delete'].forEach(id=>{
+    const btn=document.getElementById(id);
+    if(!btn)return;
+    const enabled=cnt>0 && !(id==='cloud-tb-share'&&folderCnt>0);
+    btn.classList.toggle('active',enabled);
+    btn.disabled=!enabled;
+    if(id==='cloud-tb-share'&&folderCnt>0)btn.title='Folder sharing will be added later';
+    else if(id==='cloud-tb-share')btn.title='Share selected';
+  });
+  if(!el)return;
+  if(!cnt){el.classList.add('hidden');el.innerHTML='';return;}
+  el.classList.remove('hidden');
+  const label=[];
+  if(fileCnt)label.push(`${fileCnt} file${fileCnt===1?'':'s'}`);
+  if(folderCnt)label.push(`${folderCnt} folder${folderCnt===1?'':'s'}`);
+  el.innerHTML=`<div class="flex items-center gap-3 flex-wrap w-full">
+    <span class="text-sm font-medium text-blue-700">${label.join(' and ')} selected</span>
+    <button data-click="cloudClearSel()" class="text-xs text-gray-400 hover:text-gray-600 ml-auto">Clear selection</button>
+  </div>`;
+}
+function renderCloudFolders(){
+  const el=document.getElementById('cloud-folder-list');
+  if(!el)return;
+  let labelEl=document.getElementById('cloud-folders-label');
+  if(!labelEl){
+    labelEl=document.createElement('div');
+    labelEl.id='cloud-folders-label';
+    labelEl.className='gd-section-label';
+    el.parentNode.insertBefore(labelEl,el);
+  }
+  if(!(S.cloudFolders||[]).length){
+    el.innerHTML='';
+    labelEl.style.display='none';
+    return;
+  }
+  labelEl.style.display='';
+  labelEl.innerHTML='<span>Folders</span>';
+  el.innerHTML=(S.cloudFolders||[]).map(f=>{
+    const sel=_cloudSelIds.has(cloudFolderSelId(f.id));
+    return `<div class="fade-in flex items-center justify-between px-3 py-2 rounded-lg hover:bg-gray-100 group cursor-pointer border ${sel?'border-teal-300 bg-teal-50':'border-transparent hover:border-gray-200'}" data-click="cloudOpenFolderById(${f.id})">
+      <div class="flex items-center gap-2 min-w-0">
+        <span style="display:flex;align-items:center;justify-content:center;flex-shrink:0;"><svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M2 5.5A1.5 1.5 0 0 1 3.5 4H8l1.5 1.5H16.5A1.5 1.5 0 0 1 18 7v8a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 2 15V5.5Z" fill="#1F2937"/></svg></span>
+        <span class="text-sm font-medium text-gray-700 truncate">${esc(f.name)}</span>
+      </div>
+      <button type="button" data-click="event.stopPropagation();cloudToggleFolderSel(${f.id})" class="grid-file-cb" aria-label="Select folder ${esc(f.name)}" title="Select folder" style="opacity:${sel?'1':'0'};width:20px;height:20px;border-radius:6px;border:1.5px solid ${sel?'var(--p)':'#CBD5E1'};background:${sel?'var(--p)':'#fff'};color:#fff;display:flex;align-items:center;justify-content:center;transition:opacity .15s,border-color .15s,background .15s;">
+        ${sel?'<svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M3.5 8.3l2.7 2.7 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>':''}
+      </button>
+    </div>`;
+  }).join('');
+}
+function renderCloudFileList(){
+  const el=document.getElementById('cloud-file-list');
+  if(!el)return;
+  let filesLabelEl=document.getElementById('cloud-files-label');
+  if(!filesLabelEl){
+    filesLabelEl=document.createElement('div');
+    filesLabelEl.id='cloud-files-label';
+    filesLabelEl.className='gd-section-label';
+    el.parentNode.insertBefore(filesLabelEl,el);
+  }
+  const files=_cloudVisibleFiles();
+  const hasFolders=(S.cloudFolders||[]).length>0;
+  if(!files.length&&!hasFolders){
+    filesLabelEl.style.display='none';
+    el.className='';
+    el.style.cssText='';
+    el.innerHTML=filesEmptyHtml('Cloud files will appear here, including files inside your folders.');
+    return;
+  }
+  if(!files.length){
+    filesLabelEl.style.display='none';
+    el.innerHTML='';
+    return;
+  }
+  filesLabelEl.style.display='';
+  filesLabelEl.innerHTML=`<span>Files</span><span class="count">${files.length} file${files.length!==1?'s':''}</span>`;
+  const isGrid=S.viewMode==='grid';
+  const allSel=files.every(f=>_cloudSelIds.has(String(f.id)));
+  if(isGrid){
+    el.className='grid-mode';
+    el.style.cssText='display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;padding:12px;background:transparent;';
+    el.innerHTML=files.map(f=>{
+      const id=String(f.id);
+      const name=f.name||f.filename||'Untitled';
+      const sel=_cloudSelIds.has(id);
+      const e2eeThumb=f.storage_version==='client_e2ee_s3'&&isImageFile(name);
+      const hasThumb=e2eeThumb||(f.storage_version!=='client_e2ee_s3'&&(f.has_thumbnail||isImageFile(name)||f.thumbnail_path));
+      return `<div class="fade-in" data-file-id="${esc(id)}" data-click="cloudToggleSel('${esc(id)}')" ondblclick="event.stopPropagation();openCloudPreview('${esc(id)}')"
+        onmouseenter="var cb=this.querySelector('.grid-file-cb');if(cb&&!cb.checked)cb.style.opacity='1';"
+        onmouseleave="var cb=this.querySelector('.grid-file-cb');if(cb&&!cb.checked)cb.style.opacity='0';"
+        style="display:flex;flex-direction:column;border-radius:12px;overflow:hidden;background:#fff;border:2px solid ${sel?'#2DD4BF':'#E5E7EB'};cursor:pointer;position:relative;">
+        <div style="width:100%;aspect-ratio:1;background:#F2F2F7;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;">
+          ${hasThumb?`<img data-thumb-id="${esc(id)}" data-thumb-e2ee="${e2eeThumb}" style="width:100%;height:100%;object-fit:cover;display:none" alt="${esc(name)}" onerror="this.style.display='none';this.nextElementSibling.style.cssText='display:flex;align-items:center;justify-content:center;width:100%;height:100%;font-size:36px;'"/><span style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;font-size:36px;">${fileIcon(name)}</span>`:`<span style="font-size:36px;">${fileIcon(name)}</span>`}
+          <div style="position:absolute;top:6px;left:6px;"><input type="checkbox" ${sel?'checked':''} onchange="cloudToggleSel('${esc(id)}')" data-click="event.stopPropagation()" style="width:18px;height:18px;accent-color:#0D6D6E;opacity:${sel?'1':'0'};transition:opacity 0.15s;" class="grid-file-cb"/></div>
+        </div>
+        <div style="padding:8px 10px;background:#fff;">
+          <div style="font-size:12px;font-weight:500;color:#1F2937;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${esc(name)}">${esc(name)}</div>
+          <div style="font-size:11px;color:#9CA3AF;margin-top:2px;">${fmtSize(_displayFileSize(f))}</div>
+        </div>
+      </div>`;
+    }).join('');
+  }else{
+    el.className='';
+    el.style.cssText='';
+    const isMob=window.innerWidth<768;
+    el.innerHTML=`<div class="mob-hide-selrow" style="display:flex;align-items:center;height:40px;padding:0 16px;border-bottom:1px solid #e0e0e0;background:#fff;gap:16px;flex-shrink:0;">
+      <input type="checkbox" ${allSel?'checked':''} onchange="cloudSelAll()" title="Select all" style="width:15px;height:15px;flex-shrink:0;cursor:pointer;accent-color:#0D6D6E;"/>
+      <span style="flex:1;font-size:12px;font-weight:600;color:#5f6368;text-transform:uppercase;letter-spacing:0.4px;">Name</span>
+      <span style="width:130px;font-size:12px;font-weight:600;color:#5f6368;text-transform:uppercase;letter-spacing:0.4px;text-align:right;flex-shrink:0;${isMob?'display:none':''}">Date</span>
+      <span style="width:80px;font-size:12px;font-weight:600;color:#5f6368;text-transform:uppercase;letter-spacing:0.4px;text-align:right;flex-shrink:0;${isMob?'display:none':''}">Size</span>
+      <span style="width:20px;flex-shrink:0;"></span>
+    </div>${files.map(f=>{
+      const id=String(f.id);
+      const name=f.name||f.filename||'Untitled';
+      const sel=_cloudSelIds.has(id);
+      const e2eeThumb=f.storage_version==='client_e2ee_s3'&&isImageFile(name);
+      const hasThumb=e2eeThumb||(f.storage_version!=='client_e2ee_s3'&&(f.has_thumbnail||isImageFile(name)||f.thumbnail_path));
+      const dateStr=fmtDate(f.captured_at||f.created_at);
+      return `<div class="fade-in" data-file-id="${esc(id)}" data-click="cloudToggleSel('${esc(id)}')" ondblclick="event.stopPropagation();openCloudPreview('${esc(id)}')" style="display:flex;flex-direction:row;align-items:center;height:52px;padding:0 16px;gap:16px;background:${sel?'#e8f0fe':'#fff'};border-bottom:1px solid ${sel?'#c5d8fd':'#f1f3f4'};cursor:pointer;transition:background 0.1s;${sel?'border-left:3px solid #1a73e8;':''}">
+        <input type="checkbox" ${sel?'checked':''} onchange="cloudToggleSel('${esc(id)}')" data-click="event.stopPropagation()" style="width:15px;height:15px;flex-shrink:0;cursor:pointer;accent-color:#0D6D6E;opacity:${sel?'1':'0'};transition:opacity 0.1s;" onmouseenter="this.style.opacity='1'" onmouseleave="if(!this.checked)this.style.opacity='0'"/>
+        ${hasThumb?`<div style="width:36px;height:36px;border-radius:6px;overflow:hidden;flex-shrink:0;background:#f1f3f4;display:flex;align-items:center;justify-content:center;"><img data-thumb-id="${esc(id)}" data-thumb-e2ee="${e2eeThumb}" style="width:100%;height:100%;object-fit:cover;display:none" alt="${esc(name)}" onerror="this.style.display='none';this.nextSibling.style.display='flex'"/><span style="display:flex;align-items:center;justify-content:center;font-size:20px;">${fileIcon(name)}</span></div>`:`<div style="width:36px;height:36px;border-radius:6px;flex-shrink:0;background:#f1f3f4;display:flex;align-items:center;justify-content:center;font-size:20px;">${fileIcon(name)}</div>`}
+        <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:400;color:#202124;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:'Poppins',sans-serif;">${esc(name)}</div>${isMob?`<div style="font-size:12px;color:#6e6e73;margin-top:1px;font-family:'Poppins',sans-serif;">${dateStr} - ${fmtSize(_displayFileSize(f))}</div>`:''}</div>
+        <span style="width:130px;font-size:13px;color:#5f6368;text-align:right;flex-shrink:0;font-family:'Poppins',sans-serif;${isMob?'display:none':''}">${dateStr}</span>
+        <span style="width:80px;font-size:13px;color:#5f6368;text-align:right;flex-shrink:0;font-family:'Poppins',sans-serif;${isMob?'display:none':''}">${fmtSize(_displayFileSize(f))}</span>
+        <span style="width:20px;flex-shrink:0;"></span>
+      </div>`;
+    }).join('')}`;
+  }
+  setTimeout(applyThumbnails,50);
+}
+function renderCloudBrowser(){
+  renderCloudBreadcrumb();
+  renderCloudSelBar();
+  renderCloudFolders();
+  renderCloudFileList();
+}
+function cloudTbSetSort(sort){
+  const sel=document.getElementById('cloud-sort-sel');
+  if(sel)sel.value=sort;
+  document.querySelectorAll('#cloud-sort-menu .tb-sort-item').forEach(btn=>btn.classList.remove('active'));
+  const activeId={ 'name-asc':'cloud-sort-name','name-desc':'cloud-sort-name-desc','date-desc':'cloud-sort-date','date-asc':'cloud-sort-date-asc','size-desc':'cloud-sort-size-desc','size-asc':'cloud-sort-size-asc' }[sort];
+  if(activeId)document.getElementById(activeId)?.classList.add('active');
+  const labelMap={'date-desc':'Date','date-asc':'Date','name-asc':'Name','name-desc':'Name','size-desc':'Size','size-asc':'Size'};
+  const lbl=document.getElementById('cloud-tb-sort-label');
+  if(lbl)lbl.textContent=labelMap[sort]||'Sort';
+  document.getElementById('cloud-sort-menu')?.classList.remove('open');
+  renderCloudFileList();
+}
+async function cloudSelDownload(){
+  const fileIds=cloudSelectedFileIds();
+  const folderIds=cloudSelectedFolderIds();
+  if(folderIds.length&&!fileIds.length){
+    for(const folderId of folderIds){
+      const f=_cloudFolderMap.get(String(folderId));
+      await downloadFolder(folderId,(f&&f.name)||'folder');
+    }
+    return;
+  }
+  if(folderIds.length)toast('Download selected folders separately for now','info');
+  if(!fileIds.length)return;
+  const dirHandle=await _pickSaveDir();
+  if(dirHandle===false)return;
+  S.downloadQueue=fileIds.map(id=>{
+    const f=_cloudFiles.find(x=>String(x.id)===String(id));
+    return {id,name:f?.name||f?.filename||'file',_nas:false,status:'pending',progress:0};
+  });
+  showModal('download-modal');
+  renderDownloadQ();
+  await runDownloads(dirHandle);
+}
+async function cloudSelShare(){
+  const folderIds=cloudSelectedFolderIds();
+  if(folderIds.length){shareFolder(Number(folderIds[0]));return;}
+  const ids=cloudSelectedFileIds().map(String).filter(Boolean);
+  if(!ids.length){toast('Select files to share','error');return;}
+  S.files=S.cloudFiles||[];
+  openShareDialog(ids);
+}
+async function cloudOpenMoveSelectedModal(){
+  if(!_cloudSelIds.size){toast('Select items first','info');return;}
+  S._moveContext='cloud';
+  S.selectedIds=new Set([...cloudSelectedFileIds().map(String), ...cloudSelectedFolderIds().map(folderSelId)]);
+  S.files=S.cloudFiles||[];
+  S.folders=S.cloudFolders||[];
+  await openMoveSelectedModal();
+}
+async function cloudSelDelete(){
+  const ids=cloudSelectedFileIds();
+  const folderIds=cloudSelectedFolderIds();
+  const total=ids.length+folderIds.length;
+  if(!total)return;
+  if(!await confirmDialog('Move '+total+' selected item'+(total===1?'':'s')+' to Bin?'))return;
+  try{
+    for(const folderId of folderIds)await api('POST','/folders/'+folderId+'/trash');
+    for(const id of ids)await api('POST','/files/'+id+'/trash');
+    toast('Moved '+total+' item'+(total===1?'':'s')+' to Bin','success');
+    _cloudSelIds.clear();
+    await loadCloudFiles();
+    loadDashboard().catch(()=>{});
+  }catch(e){toast('Move to Bin failed: '+userSafeErrorMessage(e,'Could not move selected items to Bin.'),'error');}
+}
+async function loadCloudFiles(){
+  const el=document.getElementById('cloud-file-list');
+  if(el){
+    el.className='';
+    el.style.cssText='';
+    el.innerHTML='<div class="cloud-empty-panel" role="status"><div class="cloud-empty-inner"><span class="spinner"></span><div class="cloud-empty-copy">Loading cloud files...</div></div></div>';
+  }
+  try{
+    _cloudFolderChildren=new Map();
+    _cloudFilesByFolder=new Map();
+    _cloudFolderMap=new Map();
+    _cloudFolderHasCloud=new Set();
+    const seenFolders=new Set();
+    async function loadNode(parentId){
+      const key=_cloudKey(parentId);
+      if(parentId!==null&&seenFolders.has(String(parentId)))return _cloudFolderHasCloud.has(String(parentId));
+      if(parentId!==null)seenFolders.add(String(parentId));
+      const folderPath=parentId===null?'/folders':'/folders?parent_id='+encodeURIComponent(parentId);
+      const filePath=parentId===null?'/files':'/files?folder_id='+encodeURIComponent(parentId);
+      const [foldersResp,filesResp]=await Promise.all([
+        api('GET',folderPath).catch(()=>({folders:[]})),
+        api('GET',filePath).catch(()=>({files:[]}))
+      ]);
+      const folders=(foldersResp.folders||foldersResp.items||[]).map(f=>({...f,name:f.name||'Untitled folder'}));
+      _cloudFolderChildren.set(key,folders);
+      folders.forEach(f=>_cloudFolderMap.set(String(f.id),f));
+      const files=(filesResp.files||filesResp.items||[]).map(f=>({...f,id:f.id,name:f.name||f.filename||'Untitled',_nas:false,folder_id:parentId}));
+      _cloudFilesByFolder.set(key,files);
+      let hasCloud=files.length>0;
+      for(const folder of folders){
+        const childHas=await loadNode(folder.id);
+        if(childHas)hasCloud=true;
+      }
+      if(parentId!==null&&hasCloud)_cloudFolderHasCloud.add(String(parentId));
+      return hasCloud;
+    }
+    await loadNode(null);
+    _cloudFiles=[..._cloudFilesByFolder.values()].flat();
+    const validFileIds=new Set(_cloudFiles.map(f=>String(f.id)));
+    const validFolderIds=new Set([..._cloudFolderHasCloud].map(id=>cloudFolderSelId(id)));
+    _cloudSelIds=new Set([..._cloudSelIds].filter(id=>validFileIds.has(String(id))||validFolderIds.has(String(id))));
+    _cloudApplyCurrentFolder();
+    renderCloudBrowser();
+  }catch(e){
+    if(el){
+      el.className='';
+      el.style.cssText='';
+      el.innerHTML=filesEmptyHtml('Cloud files could not be loaded. Try again in a moment.');
+    }
+    renderCloudSelBar();
+  }
+}
+
 function enqueueFilesCloud(files){
   // Force cloud upload regardless of NAS status for THIS batch only.
   // Save the dashboard-selected destination so we can restore it after this
@@ -13165,6 +13525,12 @@ async function revokeShare(shareId) {
                 <line x1="5.2" y1="8.9" x2="10.8" y2="12.1" stroke="currentColor" stroke-width="1.2"/>
               </svg>
             </button>
+            <button id="cloud-tb-move" class="tb-act" data-click="cloudOpenMoveSelectedModal()" title="Move selected" disabled>
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+                <path d="M2.2 5.2A1.2 1.2 0 0 1 3.4 4h3.1l1.2 1.2h5a1.2 1.2 0 0 1 1.2 1.2v5.1a1.2 1.2 0 0 1-1.2 1.2H3.4a1.2 1.2 0 0 1-1.2-1.2V5.2Z" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linejoin="round"/>
+                <path d="M6.4 8.5h4.1m0 0L9 7m1.5 1.5L9 10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
             <button id="cloud-tb-delete" class="tb-act del" data-click="cloudSelDelete()" title="Delete selected" disabled>
               <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
                 <polyline points="2,4 14,4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
@@ -13236,12 +13602,13 @@ async function revokeShare(shareId) {
         </div>
 
         <!-- Selection bar - identical structure to My Files sel-bar -->
-        <div id="cloud-sel-bar" style="display:none;background:#EFF6FF;border-bottom:1px solid #BFDBFE;padding:8px 20px;flex-shrink:0;font-size:13px;color:#1D4ED8;align-items:center;gap:12px;"></div>
+        <div id="cloud-sel-bar" class="hidden" style="background:#EFF6FF;border-bottom:1px solid #BFDBFE;padding:8px 20px;flex-shrink:0;font-size:13px;color:#1D4ED8;align-items:center;gap:12px;"></div>
 
         <!-- Drop zone + cloud file list -->
         <div id="cloud-drop-zone" class="drop-zone scrollable flex-1"
           ondrop="handleDropCloud(event)" ondragover="event.preventDefault()" ondragleave="event.preventDefault()"
           style="padding:8px 24px 24px;">
+          <div id="cloud-folder-list" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2 mb-4"></div>
           <div id="cloud-file-list">
             <div class="cloud-empty-panel" role="status">
               <div class="cloud-empty-inner">
@@ -13253,7 +13620,6 @@ async function revokeShare(shareId) {
               </div>
             </div>
           </div>
-          <div class="hidden md:block text-center text-xs mt-10" style="color:var(--mute)">Drop files here to upload to cloud · End-to-end encrypted</div>
         </div>
       </div>
 
