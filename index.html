@@ -10852,6 +10852,7 @@ function renderSharedWithMe(){
       const sel=selected.has(id);
       const hasThumb=_sharedThumbEligible(item);
       const dateStr=fmtDate(item.created_at||item.shared_seen_at);
+      const ownerName=item.owner_name||'Pockio user';
       return`<div class="fade-in" data-click="toggleSharedSel('${esc(id)}')" ondblclick="event.stopPropagation();openSharedItem('${esc(id)}')" style="display:flex;align-items:center;height:54px;padding:0 16px;gap:16px;background:${sel?'#e8f0fe':'#fff'};border-bottom:1px solid #f1f3f4;cursor:pointer;${sel?'border-left:3px solid #1a73e8;':''}">
       <input type="checkbox" ${sel?'checked':''} onchange="toggleSharedSel('${esc(id)}')" data-click="event.stopPropagation()" style="width:15px;height:15px;flex-shrink:0;cursor:pointer;accent-color:#0D6D6E;"/>
       ${hasThumb
@@ -10860,7 +10861,7 @@ function renderSharedWithMe(){
             <span style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;">${fileIcon(name)}</span>
           </div>`
         :`<div style="width:36px;height:36px;border-radius:8px;flex-shrink:0;background:#eef8f7;color:var(--p);display:flex;align-items:center;justify-content:center;font-size:20px;">${fileIcon(name)}</div>`}
-      <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:400;color:#202124;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(name)}</div>${isMob?`<div style="font-size:12px;color:#6e6e73;margin-top:1px;">${dateStr} - ${fmtSize(item.size||0)}</div>`:''}</div>
+      <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:400;color:#202124;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(name)}</div><div style="font-size:12px;color:#8b97a8;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Shared by ${esc(ownerName)}${isMob?' - '+dateStr+' - '+fmtSize(item.size||0):''}</div></div>
       <span style="width:130px;font-size:13px;color:#5f6368;text-align:right;flex-shrink:0;${isMob?'display:none':''}">${dateStr}</span>
       <span style="width:80px;font-size:13px;color:#5f6368;text-align:right;flex-shrink:0;${isMob?'display:none':''}">${fmtSize(item.size||0)}</span>
       <span style="width:20px;flex-shrink:0;"></span>
