@@ -2860,6 +2860,37 @@ function route(){
 
 // API HELPER
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+function transportErrorMessage(status, fallback='The connection was interrupted. Please retry in a moment.'){
+  const code=Number(status)||0;
+  if(code===400)return 'The request could not be completed. Please retry.';
+  if(code===401)return 'Your session expired. Please sign in again.';
+  if(code===403)return 'You do not have permission for this action.';
+  if(code===404)return 'The file could not be found.';
+  if(code===409)return 'This file needs to be refreshed before it can be opened.';
+  if(code===410)return 'This shared item is no longer available.';
+  if(code===413)return 'This file is too large for the selected destination.';
+  if(code===429)return 'Too many requests. Please wait a moment and retry.';
+  if(code===503)return 'The storage device is offline or temporarily unavailable.';
+  if(code>=500)return fallback;
+  return fallback;
+}
+function userSafeErrorMessage(err, fallback='Something went wrong. Please try again.'){
+  const msg=String((err&&err.message)||err||'').trim();
+  if(!msg)return fallback;
+  if(/\bHTTP\s*\d{3}\b/i.test(msg)||/\b(status|code)\s*[:=]?\s*\d{3}\b/i.test(msg)||/\b(502|503|504|Bad Gateway|Gateway Timeout|Internal Server Error|Service Unavailable)\b/i.test(msg)){
+    if(/\b(NAS|device|agent|tunnel|relay)\b/i.test(msg))return 'The storage device connection was interrupted. Please retry in a moment.';
+    if(/\b(cloud|storage)\b/i.test(msg))return 'Cloud storage is temporarily unavailable. Please retry in a moment.';
+    return 'The connection was interrupted. Please retry in a moment.';
+  }
+  return msg;
+}
+function userSafeToastText(msg,type='info'){
+  const raw=String(msg||'');
+  if(type!=='error')return raw;
+  const m=raw.match(/^([^:]{1,80}):\s+(.+)$/);
+  if(m)return `${m[1]}: ${userSafeErrorMessage(m[2])}`;
+  return userSafeErrorMessage(raw);
+}
 async function api(method,path,body=null,isForm=false,onProgress=null){
   resetActivity();
   const h={};
@@ -2911,7 +2942,7 @@ async function api(method,path,body=null,isForm=false,onProgress=null){
         if(res2.status===401){logout();return null;}
         const ct2=res2.headers.get('content-type')||'';
         if(ct2.includes('application/json')){const d2=await res2.json();if(!res2.ok)throw new Error(d2.detail||JSON.stringify(d2));return d2;}
-        if(!res2.ok)throw new Error(`HTTP ${res2.status}`);
+        if(!res2.ok)throw new Error(transportErrorMessage(res2.status));
         return res2;
       }catch(e){
         throw new Error('Cannot reach server. Please check your connection and retry.');
@@ -2925,7 +2956,7 @@ async function api(method,path,body=null,isForm=false,onProgress=null){
     if(!res.ok)throw new Error(d.detail||JSON.stringify(d));
     return d;
   }
-  if(!res.ok)throw new Error(`HTTP ${res.status}`);
+  if(!res.ok)throw new Error(transportErrorMessage(res.status));
   return res;
 }
 
@@ -4736,7 +4767,7 @@ function _isSharedDirectCloud(item){
 }
 async function _sharedDownloadInfo(item){
   const res=await fetch(`${API}/share/${encodeURIComponent(item.share_id)}/file/${encodeURIComponent(item.file_id)}/download-info`,{headers:_sharedHeaders()});
-  if(!res.ok){const d=await res.json().catch(()=>({}));throw new Error(d.detail||`HTTP ${res.status}`);}
+  if(!res.ok){const d=await res.json().catch(()=>({}));throw new Error(res.status>=500?transportErrorMessage(res.status):(d.detail||transportErrorMessage(res.status)));}
   return await res.json();
 }
 async function _unwrapSharedDirectCloudMaterial(item,manifest){
@@ -4803,7 +4834,7 @@ async function _sharedPlainBlob(item){
   if(!res.ok){
     const d=await res.json().catch(()=>({}));
     if(res.status===409&&String(d.detail||'').includes('download-info'))return await _sharedDirectCloudBlob(item);
-    throw new Error(d.detail||`HTTP ${res.status}`);
+    throw new Error(res.status>=500?transportErrorMessage(res.status):(d.detail||transportErrorMessage(res.status)));
   }
   const payload=await res.arrayBuffer();
   if(String(item.storage_type||'cloud').toLowerCase()==='nas')return new Blob([payload],{type:item.mime_type||'application/octet-stream'});
@@ -10354,9 +10385,10 @@ let _tt;
 function toast(msg,type='info'){
   const el=document.getElementById('toast');
   const c={info:'bg-teal-700',error:'bg-red-600',success:'bg-green-600',warn:'bg-yellow-500'};
+  const safeMsg=userSafeToastText(msg,type);
   el.className=`fixed bottom-5 left-1/2 -translate-x-1/2 text-white text-sm px-4 py-2 rounded-lg shadow-lg fade-in pointer-events-none ${c[type]||c.info}`;
   el.style.cssText='z-index:13000;max-width:min(92vw,560px);text-align:center;line-height:1.35;';
-  el.textContent=msg;el.classList.remove('hidden');
+  el.textContent=safeMsg;el.classList.remove('hidden');
   clearTimeout(_tt);_tt=setTimeout(()=>el.classList.add('hidden'),4000);
 }
 
@@ -10750,7 +10782,7 @@ async function addSelectedSharedToDrive(){
     enqueueFiles(files);
     toast('Shared files added to the upload queue','success');
   }catch(e){
-    toast('Add to my drive failed: '+(e&&e.message?e.message:'Could not copy shared file'),'error');
+    toast('Add to my drive failed: '+userSafeErrorMessage(e,'Could not copy shared file. Please retry.'),'error');
   }
 }
 async function loadSharedWithMe(){
@@ -10763,7 +10795,7 @@ async function loadSharedWithMe(){
     for(const id of [...(S.sharedSelectedIds||[])])if(!live.has(id))S.sharedSelectedIds.delete(id);
     renderSharedWithMe();
   }catch(e){
-    if(el) el.innerHTML=`<div class="text-center py-12 text-red-500 text-sm">${esc(e.message||'Could not load shared files')}</div>`;
+    if(el) el.innerHTML=`<div class="text-center py-12 text-red-500 text-sm">${esc(userSafeErrorMessage(e,'Could not load shared files. Please retry.'))}</div>`;
   }
 }
 let _sharedWithMeRefreshAt=0;
@@ -10792,7 +10824,7 @@ async function downloadSharedItem(id){
     await _saveSharedBlob(item,blob);
     toast('Shared download ready','success');
   }catch(e){
-    toast('Download failed: '+(e&&e.message?e.message:'Could not download shared file'),'error');
+    toast('Download failed: '+userSafeErrorMessage(e,'Could not download shared file. Please retry.'),'error');
   }
 }
 function renderSharedWithMe(){
