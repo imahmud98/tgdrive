@@ -1817,6 +1817,9 @@
 .group:hover .grid-file-cb{opacity:1!important;}
 .folder-card-select{cursor:pointer;}
 @media(hover:none){.group .grid-file-cb{opacity:1!important;}}
+#shared-with-me-list.grid-mode .shared-grid-file-card{position:relative!important;}
+#shared-with-me-list.grid-mode .shared-grid-select-wrap{position:absolute!important;top:6px!important;left:6px!important;width:18px!important;height:18px!important;z-index:4!important;display:block!important;}
+#shared-with-me-list.grid-mode .shared-grid-select-wrap .grid-file-cb{position:static!important;margin:0!important;display:block!important;width:18px!important;height:18px!important;transform:none!important;accent-color:#0D6D6E!important;}
 
 .db-use-btn.db-active:hover{background:var(--pd);}
 .db-sub-title{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--mute);}
@@ -10770,19 +10773,31 @@ async function downloadSelectedShared(){
 async function addSelectedSharedToDrive(){
   const items=sharedSelectedItems();
   if(!items.length){toast('Select shared files first','info');return;}
-  try{
-    toast(`Preparing ${items.length} shared file${items.length===1?'':'s'} for your drive...`);
-    const files=[];
-    for(const item of items){
+  toast(`Preparing ${items.length} shared file${items.length===1?'':'s'} for your drive...`);
+  const files=[];
+  const addedSharedIds=new Set();
+  const failed=[];
+  for(const item of items){
+    try{
       const blob=await _sharedPlainBlob(item);
       const name=_sharedDownloadName(item);
       files.push(new File([blob],name,{type:blob.type||item.mime_type||'application/octet-stream',lastModified:Date.now()}));
+      addedSharedIds.add(String(item.id));
+    }catch(e){
+      failed.push({item,error:e});
+      console.warn('[MPD] Shared file could not be prepared for drive:', item&&item.id, e&&e.message?e.message:e);
     }
-    clearSharedSel();
+  }
+  if(files.length){
+    for(const id of addedSharedIds)S.sharedSelectedIds.delete(id);
+    renderSharedWithMe();
     enqueueFiles(files);
-    toast('Shared files added to the upload queue','success');
-  }catch(e){
-    toast('Add to my drive failed: '+userSafeErrorMessage(e,'Could not copy shared file. Please retry.'),'error');
+  }
+  if(failed.length&&files.length)toast(`${files.length} file${files.length===1?'':'s'} added. ${failed.length} could not be prepared right now.`,'warn');
+  else if(files.length)toast('Shared files added to the upload queue','success');
+  else{
+    const first=failed[0]&&failed[0].error;
+    toast('Add to my drive failed: '+userSafeErrorMessage(first,'Could not copy shared file. Please retry.'),'error');
   }
 }
 async function loadSharedWithMe(){
@@ -10847,7 +10862,7 @@ function renderSharedWithMe(){
       const name=item.name||item.filename||'Shared file';
       const sel=selected.has(id);
       const hasThumb=_sharedThumbEligible(item);
-      return`<div class="fade-in" data-click="toggleSharedSel('${esc(id)}')" ondblclick="event.stopPropagation();openSharedItem('${esc(id)}')"
+      return`<div class="fade-in shared-grid-file-card" data-click="toggleSharedSel('${esc(id)}')" ondblclick="event.stopPropagation();openSharedItem('${esc(id)}')"
         onmouseenter="var cb=this.querySelector('.grid-file-cb');if(cb&&!cb.checked)cb.style.opacity='1';"
         onmouseleave="var cb=this.querySelector('.grid-file-cb');if(cb&&!cb.checked)cb.style.opacity='0';"
         style="display:flex;flex-direction:column;border-radius:12px;overflow:hidden;background:#fff;border:2px solid ${sel?'#2DD4BF':'#E5E7EB'};cursor:pointer;position:relative;">
@@ -10856,9 +10871,9 @@ function renderSharedWithMe(){
           ?`<img data-shared-thumb-id="${esc(id)}" style="width:100%;height:100%;object-fit:cover;display:none" alt="${esc(name)}" onerror="this.style.display='none';this.nextElementSibling.style.cssText='display:flex;align-items:center;justify-content:center;width:100%;height:100%;font-size:36px;'"/>
             <span style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;font-size:36px;">${fileIcon(name)}</span>`
           :`<span style="font-size:36px;">${fileIcon(name)}</span>`}
-        <div style="position:absolute;top:6px;left:6px;">
+        <div class="shared-grid-select-wrap">
           <input type="checkbox" ${sel?'checked':''} onchange="toggleSharedSel('${esc(id)}')" data-click="event.stopPropagation()"
-            style="width:18px;height:18px;accent-color:#0D6D6E;opacity:${sel?'1':'0'};transition:opacity 0.15s;" class="grid-file-cb"/>
+            aria-label="Select ${esc(name)}" style="width:18px;height:18px;accent-color:#0D6D6E;opacity:${sel?'1':'0'};transition:opacity 0.15s;" class="grid-file-cb"/>
         </div>
       </div>
       <div style="padding:8px 10px;background:#fff;">
