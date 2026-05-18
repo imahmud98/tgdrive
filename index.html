@@ -2646,7 +2646,7 @@ const S={
   recoveryKeyText:null,
   _initAppRunning:false,
   folders:[],currentFolder:null,folderPath:[],files:[],sharedWithMe:[],
-  selectedIds:new Set(),
+  selectedIds:new Set(),sharedSelectedIds:new Set(),
   uploadQueue:[],isUploading:false,
   downloadQueue:[],isDownloading:false,
   savedDirHandle:null,
@@ -10638,12 +10638,109 @@ function _sharedItemUrl(item){
   try{ key = (JSON.parse(localStorage.getItem('mpd_shared_link_keys')||'{}')||{})[item.share_id] || ''; }catch(_){ key=''; }
   return `${base}/share/${item.share_id}${key ? `?k=${key}#${key}` : ''}`;
 }
+const _sharedThumbCache = new Map();
+const SHARED_THUMB_MAX_BYTES = 12 * 1024 * 1024;
+function _sharedThumbEligible(item){
+  const name=item?.name||item?.filename||'';
+  const mime=String(item?.mime_type||'');
+  if(!(mime.startsWith('image/')||isImageFile(name)))return false;
+  return Number(item?.size||0)<=SHARED_THUMB_MAX_BYTES;
+}
+async function loadSharedThumb(item){
+  const id=String(item?.id||'');
+  if(!id||!_sharedThumbEligible(item))return null;
+  if(_sharedThumbCache.has(id)){
+    const cached=_sharedThumbCache.get(id);
+    if(cached==='FAILED')return null;
+    if(cached&&typeof cached.then==='function')return await cached;
+    return cached;
+  }
+  const pending=(async()=>{
+    try{
+      const blob=await _sharedPlainBlob(item);
+      if(!String(blob.type||item.mime_type||'').startsWith('image/'))throw new Error('Not an image');
+      const url=URL.createObjectURL(blob);
+      _sharedThumbCache.set(id,url);
+      return url;
+    }catch(_){
+      _sharedThumbCache.set(id,'FAILED');
+      return null;
+    }
+  })();
+  _sharedThumbCache.set(id,pending);
+  return await pending;
+}
+async function applySharedThumbnails(){
+  const imgs=document.querySelectorAll('[data-shared-thumb-id]');
+  for(const img of imgs){
+    const item=(S.sharedWithMe||[]).find(x=>String(x.id)===String(img.dataset.sharedThumbId));
+    if(!item)continue;
+    const url=await loadSharedThumb(item);
+    if(!url)continue;
+    img.src=url;
+    img.style.display='block';
+    const fallback=img.nextElementSibling;
+    if(fallback)fallback.style.display='none';
+  }
+}
+function sharedSelectedItems(){
+  const selected=S.sharedSelectedIds||(S.sharedSelectedIds=new Set());
+  return (S.sharedWithMe||[]).filter(item=>selected.has(String(item.id)));
+}
+function renderSharedSelBar(){
+  const selected=S.sharedSelectedIds||(S.sharedSelectedIds=new Set());
+  const n=selected.size;
+  const all=(S.sharedWithMe||[]).length>0&&(S.sharedWithMe||[]).every(item=>selected.has(String(item.id)));
+  const selectBtn=document.getElementById('shared-tb-select');
+  const dlBtn=document.getElementById('shared-tb-download');
+  const clearBtn=document.getElementById('shared-tb-clear');
+  if(selectBtn){selectBtn.classList.toggle('active',all);selectBtn.title=all?'Unselect all shared files':'Select all shared files';}
+  if(dlBtn){dlBtn.disabled=n===0;dlBtn.classList.toggle('active',n>0);}
+  if(clearBtn){clearBtn.disabled=n===0;clearBtn.classList.toggle('active',n>0);}
+  const bar=document.getElementById('shared-sel-bar');
+  if(!bar)return;
+  if(!n){
+    bar.classList.add('hidden');
+    bar.innerHTML='';
+    return;
+  }
+  bar.classList.remove('hidden');
+  bar.innerHTML=`<div class="flex items-center gap-3 flex-wrap w-full">
+    <span class="text-sm font-medium text-blue-700">${n} shared file${n===1?'':'s'} selected</span>
+    <button data-click="clearSharedSel()" class="text-xs text-gray-400 hover:text-gray-600 ml-auto">Clear selection</button>
+  </div>`;
+}
+function toggleSharedSel(id){
+  const selected=S.sharedSelectedIds||(S.sharedSelectedIds=new Set());
+  const sid=String(id);
+  selected.has(sid)?selected.delete(sid):selected.add(sid);
+  renderSharedWithMe();
+}
+function sharedSelAll(){
+  const selected=S.sharedSelectedIds||(S.sharedSelectedIds=new Set());
+  const items=S.sharedWithMe||[];
+  const all=items.length>0&&items.every(item=>selected.has(String(item.id)));
+  if(all)items.forEach(item=>selected.delete(String(item.id)));
+  else items.forEach(item=>selected.add(String(item.id)));
+  renderSharedWithMe();
+}
+function clearSharedSel(){
+  (S.sharedSelectedIds||(S.sharedSelectedIds=new Set())).clear();
+  renderSharedWithMe();
+}
+async function downloadSelectedShared(){
+  const items=sharedSelectedItems();
+  if(!items.length){toast('Select shared files first','info');return;}
+  for(const item of items)await downloadSharedItem(item.id);
+}
 async function loadSharedWithMe(){
   const el=document.getElementById('shared-with-me-list');
   if(el) el.innerHTML='<div class="text-center py-12 text-gray-400 text-sm">Loading shared files...</div>';
   try{
     const r=await api('GET',`/shared-with-me?_=${Date.now()}`);
     S.sharedWithMe=r?.items||[];
+    const live=new Set(S.sharedWithMe.map(item=>String(item.id)));
+    for(const id of [...(S.sharedSelectedIds||[])])if(!live.has(id))S.sharedSelectedIds.delete(id);
     renderSharedWithMe();
   }catch(e){
     if(el) el.innerHTML=`<div class="text-center py-12 text-red-500 text-sm">${esc(e.message||'Could not load shared files')}</div>`;
@@ -10684,37 +10781,75 @@ function renderSharedWithMe(){
   if(!items.length){
     el.className=''; el.style.cssText='';
     el.innerHTML='<div class="text-center py-16" style="color:var(--sub)"><div style="font-size:15px;font-weight:600;color:var(--txt);">No files shared with you yet.</div><div style="font-size:13px;margin-top:6px;">When someone shares a file or folder with you, it will appear here.</div></div>';
+    renderSharedSelBar();
     return;
   }
   items.sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+  const selected=S.sharedSelectedIds||(S.sharedSelectedIds=new Set());
   const isGrid=S.viewMode==='grid';
   if(isGrid){
     el.className='grid-mode';
     el.style.cssText='display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;padding:12px;background:transparent;';
-    el.innerHTML=items.map(item=>`<div class="fade-in" data-click="openSharedItem('${esc(item.id)}')" style="display:flex;flex-direction:column;border-radius:12px;overflow:hidden;background:#fff;border:1px solid #E5E7EB;cursor:pointer;position:relative;">
-      <div style="width:100%;aspect-ratio:1;background:#F2F2F7;display:flex;align-items:center;justify-content:center;overflow:hidden;color:var(--p);font-size:34px;">${fileIcon(item.name)}</div>
+    el.innerHTML=items.map(item=>{
+      const id=String(item.id);
+      const name=item.name||item.filename||'Shared file';
+      const sel=selected.has(id);
+      const hasThumb=_sharedThumbEligible(item);
+      return`<div class="fade-in" data-click="toggleSharedSel('${esc(id)}')" ondblclick="event.stopPropagation();openSharedItem('${esc(id)}')"
+        onmouseenter="var cb=this.querySelector('.grid-file-cb');if(cb&&!cb.checked)cb.style.opacity='1';"
+        onmouseleave="var cb=this.querySelector('.grid-file-cb');if(cb&&!cb.checked)cb.style.opacity='0';"
+        style="display:flex;flex-direction:column;border-radius:12px;overflow:hidden;background:#fff;border:2px solid ${sel?'#2DD4BF':'#E5E7EB'};cursor:pointer;position:relative;">
+      <div style="width:100%;aspect-ratio:1;background:#F2F2F7;display:flex;align-items:center;justify-content:center;overflow:hidden;color:var(--p);font-size:34px;position:relative;">
+        ${hasThumb
+          ?`<img data-shared-thumb-id="${esc(id)}" style="width:100%;height:100%;object-fit:cover;display:none" alt="${esc(name)}" onerror="this.style.display='none';this.nextElementSibling.style.cssText='display:flex;align-items:center;justify-content:center;width:100%;height:100%;font-size:36px;'"/>
+            <span style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;font-size:36px;">${fileIcon(name)}</span>`
+          :`<span style="font-size:36px;">${fileIcon(name)}</span>`}
+        <div style="position:absolute;top:6px;left:6px;">
+          <input type="checkbox" ${sel?'checked':''} onchange="toggleSharedSel('${esc(id)}')" data-click="event.stopPropagation()"
+            style="width:18px;height:18px;accent-color:#0D6D6E;opacity:${sel?'1':'0'};transition:opacity 0.15s;" class="grid-file-cb"/>
+        </div>
+      </div>
       <div style="padding:8px 10px;background:#fff;">
-        <div style="font-size:12px;font-weight:500;color:#1F2937;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${esc(item.name)}">${esc(item.name)}</div>
+        <div style="font-size:12px;font-weight:500;color:#1F2937;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${esc(name)}">${esc(name)}</div>
         <div style="font-size:11px;color:#9CA3AF;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${fmtSize(item.size||0)} - shared by ${esc(item.owner_name||'Pockio user')}</div>
       </div>
-    </div>`).join('');
+    </div>`;
+    }).join('');
+    setTimeout(applySharedThumbnails,50);
   }else{
     el.className=''; el.style.cssText='';
-    el.innerHTML=`<div style="display:flex;align-items:center;height:40px;padding:0 16px;border-bottom:1px solid #e0e0e0;background:#fff;gap:16px;">
+    const allSel=items.length>0&&items.every(item=>selected.has(String(item.id)));
+    const isMob=window.innerWidth<768;
+    el.innerHTML=`<div class="mob-hide-selrow" style="display:flex;align-items:center;height:40px;padding:0 16px;border-bottom:1px solid #e0e0e0;background:#fff;gap:16px;">
+      <input type="checkbox" ${allSel?'checked':''} onchange="sharedSelAll()" title="Select all" style="width:15px;height:15px;flex-shrink:0;cursor:pointer;accent-color:#0D6D6E;"/>
       <span style="flex:1;font-size:12px;font-weight:600;color:#5f6368;text-transform:uppercase;letter-spacing:.4px;">Name</span>
-      <span style="width:160px;font-size:12px;font-weight:600;color:#5f6368;text-transform:uppercase;letter-spacing:.4px;">Owner</span>
-      <span style="width:90px;font-size:12px;font-weight:600;color:#5f6368;text-transform:uppercase;letter-spacing:.4px;">Access</span>
-      <span style="width:80px;font-size:12px;font-weight:600;color:#5f6368;text-transform:uppercase;letter-spacing:.4px;text-align:right;">Size</span>
+      <span style="width:160px;font-size:12px;font-weight:600;color:#5f6368;text-transform:uppercase;letter-spacing:.4px;${isMob?'display:none':''}">Owner</span>
+      <span style="width:90px;font-size:12px;font-weight:600;color:#5f6368;text-transform:uppercase;letter-spacing:.4px;${isMob?'display:none':''}">Access</span>
+      <span style="width:80px;font-size:12px;font-weight:600;color:#5f6368;text-transform:uppercase;letter-spacing:.4px;text-align:right;${isMob?'display:none':''}">Size</span>
       <span style="width:84px;"></span>
-    </div>${items.map(item=>`<div class="fade-in" data-click="openSharedItem('${esc(item.id)}')" style="display:flex;align-items:center;height:54px;padding:0 16px;gap:16px;background:#fff;border-bottom:1px solid #f1f3f4;cursor:pointer;">
-      <div style="width:36px;height:36px;border-radius:8px;flex-shrink:0;background:#eef8f7;color:var(--p);display:flex;align-items:center;justify-content:center;font-size:20px;">${fileIcon(item.name)}</div>
-      <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:400;color:#202124;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(item.name)}</div><div style="font-size:12px;color:#8b97a8;margin-top:1px;">Shared item - owner storage</div></div>
-      <span style="width:160px;font-size:13px;color:#5f6368;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(item.owner_name||'Pockio user')}</span>
-      <span style="width:90px;font-size:13px;color:var(--p);text-transform:capitalize;">${esc(item.role||'viewer')}</span>
-      <span style="width:80px;font-size:13px;color:#5f6368;text-align:right;">${fmtSize(item.size||0)}</span>
+    </div>${items.map(item=>{
+      const id=String(item.id);
+      const name=item.name||item.filename||'Shared file';
+      const sel=selected.has(id);
+      const hasThumb=_sharedThumbEligible(item);
+      return`<div class="fade-in" data-click="toggleSharedSel('${esc(id)}')" ondblclick="event.stopPropagation();openSharedItem('${esc(id)}')" style="display:flex;align-items:center;height:54px;padding:0 16px;gap:16px;background:${sel?'#e8f0fe':'#fff'};border-bottom:1px solid #f1f3f4;cursor:pointer;${sel?'border-left:3px solid #1a73e8;':''}">
+      <input type="checkbox" ${sel?'checked':''} onchange="toggleSharedSel('${esc(id)}')" data-click="event.stopPropagation()" style="width:15px;height:15px;flex-shrink:0;cursor:pointer;accent-color:#0D6D6E;"/>
+      ${hasThumb
+        ?`<div style="width:36px;height:36px;border-radius:8px;overflow:hidden;flex-shrink:0;background:#eef8f7;color:var(--p);display:flex;align-items:center;justify-content:center;font-size:20px;">
+            <img data-shared-thumb-id="${esc(id)}" style="width:100%;height:100%;object-fit:cover;display:none" alt="${esc(name)}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"/>
+            <span style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;">${fileIcon(name)}</span>
+          </div>`
+        :`<div style="width:36px;height:36px;border-radius:8px;flex-shrink:0;background:#eef8f7;color:var(--p);display:flex;align-items:center;justify-content:center;font-size:20px;">${fileIcon(name)}</div>`}
+      <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:400;color:#202124;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(name)}</div><div style="font-size:12px;color:#8b97a8;margin-top:1px;">Shared item - owner storage${isMob?' - '+fmtSize(item.size||0):''}</div></div>
+      <span style="width:160px;font-size:13px;color:#5f6368;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;${isMob?'display:none':''}">${esc(item.owner_name||'Pockio user')}</span>
+      <span style="width:90px;font-size:13px;color:var(--p);text-transform:capitalize;${isMob?'display:none':''}">${esc(item.role||'viewer')}</span>
+      <span style="width:80px;font-size:13px;color:#5f6368;text-align:right;${isMob?'display:none':''}">${fmtSize(item.size||0)}</span>
       <button class="btn-secondary" data-click="event.stopPropagation();downloadSharedItem('${esc(item.id)}')" style="width:84px;padding:7px 10px;font-size:12px;border-radius:10px;">Download</button>
-    </div>`).join('')}`;
+    </div>`;
+    }).join('')}`;
+    setTimeout(applySharedThumbnails,50);
   }
+  renderSharedSelBar();
 }
 function filesEmptyHtml(message){
   var copy = message || 'Choose Cloud or a computer, then upload files. They will appear here.';
@@ -12836,6 +12971,16 @@ async function revokeShare(shareId) {
         <div class="drive-tb">
           <div class="tb-left"><div class="text-sm" style="color:var(--sub);font-weight:700;">Shared with me</div></div>
           <div class="tb-right">
+            <button id="shared-tb-select" class="tb-act" data-click="sharedSelAll()" title="Select all shared files">
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><rect x="2.5" y="2.5" width="11" height="11" rx="2" stroke="currentColor" stroke-width="1.4"/><path d="M5 8.2l2 2 4-4.4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <button id="shared-tb-download" class="tb-act" data-click="downloadSelectedShared()" title="Download selected shared files" disabled>
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M8 2v7" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/><path d="M5 6.5 8 9.5l3-3" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/><path d="M3.5 12.5h9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            </button>
+            <button id="shared-tb-clear" class="tb-act" data-click="clearSharedSel()" title="Clear shared selection" disabled>
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M4 4l8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
+            </button>
+            <div class="tb-divider"></div>
             <button class="tb-act" data-click="loadSharedWithMe()" title="Refresh shared files">
               <svg width="15" height="15" viewBox="0 0 16 16" fill="none"><path d="M13 7a5 5 0 1 0-1.5 3.6" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" fill="none"/><path d="M13 3.5V7h-3.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>
             </button>
@@ -12850,6 +12995,7 @@ async function revokeShare(shareId) {
             </div>
           </div>
         </div>
+        <div id="shared-sel-bar" class="hidden" style="background:#EFF6FF;border-bottom:1px solid #BFDBFE;padding:8px 20px;flex-shrink:0;font-size:13px;color:#1D4ED8;"></div>
         <div class="drop-zone scrollable flex-1" style="padding:8px 24px 24px;">
           <div id="shared-with-me-list" class="space-y-0.5"></div>
         </div>
