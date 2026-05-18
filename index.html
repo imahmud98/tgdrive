@@ -4786,7 +4786,7 @@ async function _unwrapSharedDirectCloudBlockKey(blockMeta,wrapKey){
   if(!wrapKey||!blockMeta?.wrapped_key?.iv||!blockMeta?.wrapped_key?.ciphertext)throw new Error('Encrypted cloud block metadata is missing.');
   return await crypto.subtle.decrypt({name:'AES-GCM',iv:DirectCloudE2EE.b64ToBytes(blockMeta.wrapped_key.iv)},wrapKey,DirectCloudE2EE.b64ToBytes(blockMeta.wrapped_key.ciphertext));
 }
-async function _sharedDirectCloudBlob(item,info=null){
+async function _sharedDirectCloudBlob(item,info=null,onProgress=null){
   info=info||await _sharedDownloadInfo(item);
   const manifest=info.encryption_manifest||{};
   if(info.object_layout==='delta')throw new Error('Delta-compressed shared cloud files must be re-shared before preview.');
@@ -4825,21 +4825,45 @@ async function _sharedDirectCloudBlob(item,info=null){
     const cipher=await res.arrayBuffer();
     const plain=await crypto.subtle.decrypt({name:'AES-GCM',iv:decryptIv},decryptKey,cipher);
     parts.push(plain);
+    if(onProgress)onProgress(Math.min(0.9, partNumber/partCount*0.9));
     if(!blockEntries)cipherOffset+=cipherLen;
   }
   let blob=new Blob(parts,{type:info.mime_type||item.mime_type||'application/octet-stream'});
   if(manifest.compression&&manifest.compression.alg==='gzip')blob=await _gunzipBlob(blob);
   return blob;
 }
-async function _sharedPlainBlob(item){
-  if(_isSharedDirectCloud(item))return await _sharedDirectCloudBlob(item);
+async function _sharedResponseArrayBuffer(res,onProgress=null){
+  if(!res.body){
+    const buf=await res.arrayBuffer();
+    if(onProgress)onProgress(0.9);
+    return buf;
+  }
+  const total=Number(res.headers.get('content-length')||0);
+  const reader=res.body.getReader();
+  const chunks=[];
+  let received=0;
+  while(true){
+    const {done,value}=await reader.read();
+    if(done)break;
+    chunks.push(value);
+    received+=value.byteLength||value.length||0;
+    if(onProgress&&total)onProgress(Math.min(0.9,received/total*0.9));
+  }
+  const out=new Uint8Array(received);
+  let offset=0;
+  for(const chunk of chunks){out.set(chunk,offset);offset+=chunk.byteLength||chunk.length||0;}
+  if(onProgress)onProgress(0.9);
+  return out.buffer;
+}
+async function _sharedPlainBlob(item,onProgress=null){
+  if(_isSharedDirectCloud(item))return await _sharedDirectCloudBlob(item,null,onProgress);
   const res=await fetch(`${API}/share/${encodeURIComponent(item.share_id)}/file/${encodeURIComponent(item.file_id)}`,{headers:_sharedHeaders()});
   if(!res.ok){
     const d=await res.json().catch(()=>({}));
-    if(res.status===409&&String(d.detail||'').includes('download-info'))return await _sharedDirectCloudBlob(item);
+    if(res.status===409&&String(d.detail||'').includes('download-info'))return await _sharedDirectCloudBlob(item,null,onProgress);
     throw new Error(res.status>=500?transportErrorMessage(res.status):(d.detail||transportErrorMessage(res.status)));
   }
-  const payload=await res.arrayBuffer();
+  const payload=await _sharedResponseArrayBuffer(res,onProgress);
   if(String(item.storage_type||'cloud').toLowerCase()==='nas')return new Blob([payload],{type:item.mime_type||'application/octet-stream'});
   if(!item?.wrapped_file_key||!item?.key_iv)return new Blob([payload],{type:item.mime_type||'application/octet-stream'});
   const fileKeyRaw=await _sharedUnwrapFileKey(item);
@@ -9891,6 +9915,30 @@ async function runDownloads(dirHandle){
     if(item.status==='cancelled')continue;
     item.status='downloading';item.progress=0;renderDownloadQ();
     try{
+      if(item._shared){
+        item.progress=0.08;renderDownloadQ();
+        const blob=await _sharedPlainBlob(item.sharedItem,pct=>{item.progress=Math.max(0.08,Math.min(0.9,pct));renderDownloadQ();});
+        item.progress=0.9;renderDownloadQ();
+        if(dirHandle){
+          const fileHandle=await dirHandle.getFileHandle(item.name,{create:true});
+          const writable=await fileHandle.createWritable();
+          try{
+            await writable.write(blob);
+            await writable.close();
+          }catch(e){
+            await writable.abort().catch(()=>{});
+            throw e;
+          }
+        }else{
+          const url=URL.createObjectURL(blob);
+          const a=document.createElement('a');a.href=url;a.download=item.name;
+          document.body.appendChild(a);a.click();document.body.removeChild(a);
+          setTimeout(()=>URL.revokeObjectURL(url),60000);
+        }
+        item.status='done';item.progress=1;renderDownloadQ();
+        await new Promise(r=>setTimeout(r,300));
+        continue;
+      }
       // NAS files download via signed URL from /nas/download-url/{file_id}
       // Response may include via="relay" (tunnel through backend) or via="direct" (LAN)
       // Large relay files (>= 10 MB) use 2 MB chunked download to cap RAM at ~4 MB peak.
@@ -10768,33 +10816,47 @@ function clearSharedSel(){
 async function downloadSelectedShared(){
   const items=sharedSelectedItems();
   if(!items.length){toast('Select shared files first','info');return;}
-  for(const item of items)await downloadSharedItem(item.id);
+  const dirHandle=await _pickSaveDir();
+  if(dirHandle===false)return;
+  S.downloadQueue=items.map(item=>({
+    id:String(item.id),
+    name:_sharedDownloadName(item),
+    _shared:true,
+    sharedItem:item,
+    size:item.size||0,
+    status:'pending',
+    progress:0
+  }));
+  showModal('download-modal');
+  renderDownloadQ();
+  await runDownloads(dirHandle);
 }
 async function addSelectedSharedToDrive(){
   const items=sharedSelectedItems();
   if(!items.length){toast('Select shared files first','info');return;}
   toast(`Preparing ${items.length} shared file${items.length===1?'':'s'} for your drive...`);
-  const files=[];
+  showModal('upload-modal');
   const addedSharedIds=new Set();
   const failed=[];
   for(const item of items){
     try{
       const blob=await _sharedPlainBlob(item);
       const name=_sharedDownloadName(item);
-      files.push(new File([blob],name,{type:blob.type||item.mime_type||'application/octet-stream',lastModified:Date.now()}));
+      const file=new File([blob],name,{type:blob.type||item.mime_type||'application/octet-stream',lastModified:Date.now()});
       addedSharedIds.add(String(item.id));
+      enqueueFiles([file]);
     }catch(e){
       failed.push({item,error:e});
       console.warn('[MPD] Shared file could not be prepared for drive:', item&&item.id, e&&e.message?e.message:e);
     }
   }
-  if(files.length){
+  const addedCount=addedSharedIds.size;
+  if(addedCount){
     for(const id of addedSharedIds)S.sharedSelectedIds.delete(id);
     renderSharedWithMe();
-    enqueueFiles(files);
   }
-  if(failed.length&&files.length)toast(`${files.length} file${files.length===1?'':'s'} added. ${failed.length} could not be prepared right now.`,'warn');
-  else if(files.length)toast('Shared files added to the upload queue','success');
+  if(failed.length&&addedCount)toast(`${addedCount} file${addedCount===1?'':'s'} added. ${failed.length} could not be prepared right now.`,'warn');
+  else if(addedCount)toast('Shared files added to the upload queue','success');
   else{
     const first=failed[0]&&failed[0].error;
     toast('Add to my drive failed: '+userSafeErrorMessage(first,'Could not copy shared file. Please retry.'),'error');
