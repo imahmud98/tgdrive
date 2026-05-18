@@ -14459,6 +14459,8 @@ function dbRenderUserList(type){
   function dbMemberAvatarHtml(u, i){
     var initials = dbInitials(u.username || u);
     var avatarUrl = String((u && u.avatar_url) || '');
+    var memberId = u && (u.member_user_id || u.user_id || u.id);
+    if(!avatarUrl && memberId) avatarUrl = '/user/avatar/' + encodeURIComponent(memberId) + '.jpg?v=member';
     var cls = 'db-user-av ' + dbAvCls(i);
     if(!avatarUrl) return '<div class="' + cls + '">' + initials + '</div>';
     return '<div class="' + cls + '">'
