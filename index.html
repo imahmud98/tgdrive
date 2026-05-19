@@ -3083,7 +3083,7 @@ async function login(username,password){
       headers:{'Content-Type':'application/json','ngrok-skip-browser-warning':'true','x-requested-with':'XMLHttpRequest'},
       body:JSON.stringify({username,password,turnstile_token:S.turnstileToken||''})
     });
-  }catch(e){throw new Error('Cannot reach server. Is the backend running?');}
+  }catch(e){throw new Error('Cannot reach Pockio right now. Please try again in a moment.');}
   const ct=res.headers.get('content-type')||'';
   const d=ct.includes('application/json')?await res.json():null;
   if(!res.ok){
@@ -3102,6 +3102,16 @@ async function login(username,password){
   if(d.refresh_token){_setRefreshToken(d.refresh_token);}
   S._password=password;
   await initApp();return'ok';
+}
+function loginErrorMessage(err){
+  const raw=(err&&err.message)||'Login failed. Please try again.';
+  const msg=String(raw);
+  if(msg.includes('locked')||msg.includes('Too many')||msg.includes('attempt'))return msg;
+  if(msg.includes('Cannot reach')||msg.includes('Failed to fetch')||msg.includes('NetworkError'))return 'Pockio cannot reach the login service right now. Please try again in a moment.';
+  if(msg.includes('Login failed (502)')||msg.includes('Login failed (503)')||msg.includes('Login failed (504)')||msg.includes('Login failed (530)'))return 'Pockio login is temporarily unavailable. Please try again in a moment.';
+  if(msg.includes('Human verification'))return msg;
+  if(msg.includes('Invalid username or password')||msg.includes('Invalid login details'))return 'Invalid username or password.';
+  return msg;
 }
 function logout(){
   try{
@@ -11891,7 +11901,7 @@ async function handleLogin(e){
     const result=await login(v('l-username'),v('l-password'));
     if(result==='requires_2fa')show2FAView();
   }catch(err){
-    const msg=err.message||'Login failed. Please try again.';
+    const msg=loginErrorMessage(err);
     S.loginFailCount=(S.loginFailCount||0)+1;
     // Parse lockout info from backend message
     if(msg.includes('locked')||msg.includes('Too many')||msg.includes('429')){
@@ -11902,7 +11912,7 @@ async function handleLogin(e){
       // Backend returned remaining attempts
       setErr('login-err',msg);
     } else {
-      setErr('login-err','Invalid login details or verification failed.');
+      setErr('login-err',msg);
     }
     resetTurnstile();
   }
