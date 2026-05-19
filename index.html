@@ -1494,9 +1494,9 @@
   }
   .vt-btn:hover { background: #e8eaed !important; }
   .vt-btn.active-nav {
-    background: #d3e3fd !important;
-    color: #0842a0 !important;
-    box-shadow: none !important;
+    background: rgba(13, 109, 110, 0.14) !important;
+    color: #0D6D6E !important;
+    box-shadow: inset 0 0 0 1px rgba(13, 109, 110, 0.22) !important;
   }
 
   /* Toolbar action buttons */
@@ -1611,14 +1611,14 @@
   }
   #file-list:not(.grid-mode) .fade-in:last-child { border-bottom: none !important; }
   #file-list:not(.grid-mode) .fade-in:hover { background: #f8f9fa !important; }
-  #file-list:not(.grid-mode) .fade-in.border-teal-200 { background: #e8f0fe !important; border-left: 3px solid #1a73e8 !important; }
+  #file-list:not(.grid-mode) .fade-in.border-teal-200 { background: rgba(13,109,110,0.10) !important; border-left: 3px solid #0D6D6E !important; }
 
   /* File row contents */
   #file-list:not(.grid-mode) .fade-in > input[type="checkbox"] {
     display: inline-block !important;
     width: 16px !important; height: 16px !important;
     flex-shrink: 0 !important;
-    accent-color: #0842a0 !important;
+    accent-color: #0D6D6E !important;
     cursor: pointer !important;
     opacity: 1 !important;
     transition: opacity 0.12s !important;
@@ -1682,11 +1682,11 @@
 
   /* Ã¢"â‚¬Ã¢"â‚¬ SELECTION BAR Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬ */
   #sel-bar {
-    background: #e8f0fe !important;
-    border-bottom: 1px solid #c5d8fd !important;
+    background: rgba(13,109,110,0.10) !important;
+    border-bottom: 1px solid rgba(13,109,110,0.24) !important;
     font-family: 'Poppins', sans-serif !important;
     font-size: 13px !important;
-    color: #0842a0 !important;
+    color: #0D6D6E !important;
     padding: 8px 24px !important;
     display: flex !important;
   }
@@ -8870,17 +8870,7 @@ function _cloudSortValue(){
 }
 function _cloudVisibleFiles(){
   const files=[...(S.cloudFiles||[])];
-  const sort=_cloudSortValue();
-  files.sort(function(a,b){
-    const an=a.name||a.filename||'', bn=b.name||b.filename||'';
-    if(sort==='date-desc') return new Date(b.captured_at||b.created_at||0)-new Date(a.captured_at||a.created_at||0);
-    if(sort==='date-asc') return new Date(a.captured_at||a.created_at||0)-new Date(b.captured_at||b.created_at||0);
-    if(sort==='name-desc') return bn.localeCompare(an);
-    if(sort==='size-desc') return (b.size||0)-(a.size||0);
-    if(sort==='size-asc') return (a.size||0)-(b.size||0);
-    return an.localeCompare(bn);
-  });
-  return files;
+  return _sortStorageFiles(files,_cloudSortValue());
 }
 function _cloudApplyCurrentFolder(){
   S.cloudFolderPath=[];
@@ -9051,7 +9041,7 @@ function renderCloudFileList(){
       const e2eeThumb=f.storage_version==='client_e2ee_s3'&&isImageFile(name);
       const hasThumb=e2eeThumb||(f.storage_version!=='client_e2ee_s3'&&(f.has_thumbnail||isImageFile(name)||f.thumbnail_path));
       const dateStr=fmtDate(f.captured_at||f.created_at);
-      return `<div class="fade-in" data-file-id="${esc(id)}" data-click="cloudToggleSel('${esc(id)}')" ondblclick="event.stopPropagation();openCloudPreview('${esc(id)}')" style="display:flex;flex-direction:row;align-items:center;height:52px;padding:0 16px;gap:16px;background:${sel?'#e8f0fe':'#fff'};border-bottom:1px solid ${sel?'#c5d8fd':'#f1f3f4'};cursor:pointer;transition:background 0.1s;${sel?'border-left:3px solid #1a73e8;':''}">
+      return `<div class="fade-in" data-file-id="${esc(id)}" data-click="cloudToggleSel('${esc(id)}')" ondblclick="event.stopPropagation();openCloudPreview('${esc(id)}')" style="display:flex;flex-direction:row;align-items:center;height:52px;padding:0 16px;gap:16px;background:${sel?'rgba(13,109,110,0.10)':'#fff'};border-bottom:1px solid ${sel?'rgba(13,109,110,0.26)':'#f1f3f4'};cursor:pointer;transition:background 0.1s;${sel?'border-left:3px solid #0D6D6E;':''}">
         <input type="checkbox" ${sel?'checked':''} onchange="cloudToggleSel('${esc(id)}')" data-click="event.stopPropagation()" style="width:15px;height:15px;flex-shrink:0;cursor:pointer;accent-color:#0D6D6E;opacity:${sel?'1':'0'};transition:opacity 0.1s;" onmouseenter="this.style.opacity='1'" onmouseleave="if(!this.checked)this.style.opacity='0'"/>
         ${hasThumb?`<div style="width:36px;height:36px;border-radius:6px;overflow:hidden;flex-shrink:0;background:#f1f3f4;display:flex;align-items:center;justify-content:center;"><img data-thumb-id="${esc(id)}" data-thumb-e2ee="${e2eeThumb}" style="width:100%;height:100%;object-fit:cover;display:none" alt="${esc(name)}" onerror="this.style.display='none';this.nextSibling.style.display='flex'"/><span style="display:flex;align-items:center;justify-content:center;font-size:20px;">${fileIcon(name)}</span></div>`:`<div style="width:36px;height:36px;border-radius:6px;flex-shrink:0;background:#f1f3f4;display:flex;align-items:center;justify-content:center;font-size:20px;">${fileIcon(name)}</div>`}
         <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:400;color:#202124;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:'Poppins',sans-serif;">${esc(name)}</div>${isMob?`<div style="font-size:12px;color:#6e6e73;margin-top:1px;font-family:'Poppins',sans-serif;">${dateStr} - ${fmtSize(_displayFileSize(f))}</div>`:''}</div>
@@ -9212,17 +9202,7 @@ function _externalSortValue(){
 }
 function _externalVisibleFiles(){
   const files=[...(S.externalFiles||[])];
-  const sort=_externalSortValue();
-  files.sort(function(a,b){
-    const an=a.name||a.filename||'', bn=b.name||b.filename||'';
-    if(sort==='date-desc') return new Date(b.captured_at||b.created_at||0)-new Date(a.captured_at||a.created_at||0);
-    if(sort==='date-asc') return new Date(a.captured_at||a.created_at||0)-new Date(b.captured_at||b.created_at||0);
-    if(sort==='name-desc') return bn.localeCompare(an);
-    if(sort==='size-desc') return (b.size||0)-(a.size||0);
-    if(sort==='size-asc') return (a.size||0)-(b.size||0);
-    return an.localeCompare(bn);
-  });
-  return files;
+  return _sortStorageFiles(files,_externalSortValue());
 }
 function _externalApplyCurrentFolder(){
   S.externalFolderPath=S.externalFolderPath||[];
@@ -9414,7 +9394,7 @@ function renderExternalFileList(){
       const e2eeThumb=f.storage_version==='client_e2ee_s3'&&isImageFile(name);
       const hasThumb=e2eeThumb||(f.storage_version!=='client_e2ee_s3'&&(f.has_thumbnail||isImageFile(name)||f.thumbnail_path));
       const dateStr=fmtDate(f.captured_at||f.created_at);
-      return `<div class="fade-in" data-file-id="${esc(id)}" data-click="externalToggleSel('${esc(id)}')" ondblclick="event.stopPropagation();openNasPreview('${esc(id)}')" style="display:flex;flex-direction:row;align-items:center;height:52px;padding:0 16px;gap:16px;background:${sel?'#e8f0fe':'#fff'};border-bottom:1px solid ${sel?'#c5d8fd':'#f1f3f4'};cursor:pointer;transition:background 0.1s;${sel?'border-left:3px solid #1a73e8;':''}">
+      return `<div class="fade-in" data-file-id="${esc(id)}" data-click="externalToggleSel('${esc(id)}')" ondblclick="event.stopPropagation();openNasPreview('${esc(id)}')" style="display:flex;flex-direction:row;align-items:center;height:52px;padding:0 16px;gap:16px;background:${sel?'rgba(13,109,110,0.10)':'#fff'};border-bottom:1px solid ${sel?'rgba(13,109,110,0.26)':'#f1f3f4'};cursor:pointer;transition:background 0.1s;${sel?'border-left:3px solid #0D6D6E;':''}">
         <input type="checkbox" ${sel?'checked':''} onchange="externalToggleSel('${esc(id)}')" data-click="event.stopPropagation()" style="width:15px;height:15px;flex-shrink:0;cursor:pointer;accent-color:#0D6D6E;opacity:${sel?'1':'0'};transition:opacity 0.1s;" onmouseenter="this.style.opacity='1'" onmouseleave="if(!this.checked)this.style.opacity='0'"/>
         ${hasThumb?`<div style="width:36px;height:36px;border-radius:6px;overflow:hidden;flex-shrink:0;background:#f1f3f4;display:flex;align-items:center;justify-content:center;"><img data-thumb-id="${esc(id)}" data-thumb-nas="true" style="width:100%;height:100%;object-fit:cover;display:none" alt="${esc(name)}" onerror="this.style.display='none';this.nextSibling.style.display='flex'"/><span style="display:flex;align-items:center;justify-content:center;font-size:20px;">${fileIcon(name)}</span></div>`:`<div style="width:36px;height:36px;border-radius:6px;flex-shrink:0;background:#f1f3f4;display:flex;align-items:center;justify-content:center;font-size:20px;">${fileIcon(name)}</div>`}
         <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:400;color:#202124;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:'Poppins',sans-serif;">${esc(name)}</div>${isMob?`<div style="font-size:12px;color:#6e6e73;margin-top:1px;font-family:'Poppins',sans-serif;">${dateStr} - ${fmtSize(_displayFileSize(f))} - NAS</div>`:''}</div>
@@ -11760,6 +11740,32 @@ function filesEmptyHtml(message){
     + '</div>'
     + '</div>';
 }
+function _storageSortName(f){
+  return String(f?.name||f?.filename||'').toLocaleLowerCase();
+}
+function _storageSortDateMs(f){
+  const raw=f?.captured_at||f?.created_at||f?.uploaded_at||f?.updated_at||f?.mtime||0;
+  const t=Date.parse(raw);
+  return Number.isFinite(t)?t:0;
+}
+function _storageSortSize(f){
+  return Number(_displayFileSize(f)||f?.size||f?.plaintext_size||f?.stored_plaintext_size||0)||0;
+}
+function _compareStorageFiles(a,b,sort){
+  const mode=sort==='name'?'name-asc':sort==='date'?'date-desc':(sort||'name-asc');
+  if(mode==='date-desc')return _storageSortDateMs(b)-_storageSortDateMs(a);
+  if(mode==='date-asc')return _storageSortDateMs(a)-_storageSortDateMs(b);
+  if(mode==='name-desc')return _storageSortName(b).localeCompare(_storageSortName(a));
+  if(mode==='size-desc')return _storageSortSize(b)-_storageSortSize(a);
+  if(mode==='size-asc')return _storageSortSize(a)-_storageSortSize(b);
+  return _storageSortName(a).localeCompare(_storageSortName(b));
+}
+function _sortStorageFiles(files,sort){
+  return [...(files||[])].sort((a,b)=>_compareStorageFiles(a,b,sort));
+}
+function _sortStorageLabel(mode){
+  return ({'name':'Name','name-asc':'Name','name-desc':'Name','date':'Date','date-desc':'Date','date-asc':'Date','size-desc':'Size','size-asc':'Size'})[mode]||'Name';
+}
 function renderFiles(){
   const el=document.getElementById('file-list');if(!el)return;
   // â”€â”€ Files section label (mobile) â”€â”€
@@ -11785,13 +11791,7 @@ function renderFiles(){
   filesLabelEl.style.display='';
   filesLabelEl.innerHTML=`<span>Files</span><span class="count">${fCount} file${fCount!==1?'s':''}</span>`;
 
-  // Apply sort
-  let files=[...S.files];
-  const sort=S._sort||'name';
-  if(sort==='name') files.sort((a,b)=>a.name.localeCompare(b.name));
-  else if(sort==='name-desc') files.sort((a,b)=>b.name.localeCompare(a.name));
-  else if(sort==='date') files.sort((a,b)=>new Date(b.captured_at||b.created_at)-new Date(a.captured_at||a.created_at));
-  else if(sort==='date-asc') files.sort((a,b)=>new Date(a.captured_at||a.created_at)-new Date(b.captured_at||b.created_at));
+  const files=_sortStorageFiles(S.files,S._sort||'name-asc');
 
   const allSel=files.every(f=>S.selectedIds.has(String(f.id)));
   const isGrid=S.viewMode==='grid';
@@ -11852,14 +11852,14 @@ function renderFiles(){
         const e2eeThumb=f.storage_version === 'client_e2ee_s3' && isImageFile(f.name);
         const hasThumb=e2eeThumb || (f.storage_version !== 'client_e2ee_s3' && (f._nas ? (f.has_thumbnail||f.thumbnail_path) : (f.has_thumbnail||isImageFile(f.name)||f.thumbnail_path)));
         const dateStr=fmtDate(f.captured_at||f.created_at);
-        const rowBg=sel?'#e8f0fe':'#fff';
-        const rowBorder=sel?'border-bottom:1px solid #c5d8fd;':'border-bottom:1px solid #f1f3f4;';
+        const rowBg=sel?'rgba(13,109,110,0.10)':'#fff';
+        const rowBorder=sel?'border-bottom:1px solid rgba(13,109,110,0.26);':'border-bottom:1px solid #f1f3f4;';
         const previewDbl = f._nas
           ? ` ondblclick="event.stopPropagation();openNasPreview('${f.id}')"`
           : ` ondblclick="event.stopPropagation();openCloudPreview('${f.id}')"`; 
         return`
       <div class="fade-in" data-file-id="${f.id}"
-        style="display:flex;flex-direction:row;align-items:center;height:52px;padding:0 16px;gap:16px;background:${rowBg};${rowBorder}cursor:pointer;transition:background 0.1s;${deleting?'opacity:0.6':''}${sel?'border-left:3px solid #1a73e8;':''}"
+        style="display:flex;flex-direction:row;align-items:center;height:52px;padding:0 16px;gap:16px;background:${rowBg};${rowBorder}cursor:pointer;transition:background 0.1s;${deleting?'opacity:0.6':''}${sel?'border-left:3px solid #0D6D6E;':''}"
         onmouseenter="if(!this.dataset.sel)this.style.background='#f8f9fa'"
         onmouseleave="if(!this.dataset.sel)this.style.background='#fff'"
         ${sel?'data-sel="1"':''}
@@ -13805,7 +13805,7 @@ async function revokeShare(shareId) {
                 <span class="sort-label" id="tb-sort-label">Name</span>
               </button>
               <div class="tb-sort-menu" id="tb-sort-menu" role="menu">
-                <button class="tb-sort-item active" id="sort-name" role="menuitem" data-click="tbSetSort('name')">
+                <button class="tb-sort-item active" id="sort-name-asc" role="menuitem" data-click="tbSetSort('name-asc')">
                   <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><line x1="2" y1="4" x2="7" y2="4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="2" y1="7" x2="10" y2="7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="2" y1="10" x2="5" y2="10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
                   <span>Name (A-Z)</span>
                 </button>
@@ -13820,6 +13820,14 @@ async function revokeShare(shareId) {
                 <button class="tb-sort-item" id="sort-date-asc" role="menuitem" data-click="tbSetSort('date-asc')">
                   <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="2.5" width="11" height="10" rx="1" stroke="currentColor" stroke-width="1.3" fill="none"/><line x1="5" y1="1.5" x2="5" y2="4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="9" y1="1.5" x2="9" y2="4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="1.5" y1="6" x2="12.5" y2="6" stroke="currentColor" stroke-width="1.2"/></svg>
                   <span>Date (oldest)</span>
+                </button>
+                <button class="tb-sort-item" id="sort-size-desc" role="menuitem" data-click="tbSetSort('size-desc')">
+                  <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><line x1="2" y1="4" x2="12" y2="4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="2" y1="7" x2="9" y2="7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="2" y1="10" x2="6" y2="10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+                  <span>Size (largest)</span>
+                </button>
+                <button class="tb-sort-item" id="sort-size-asc" role="menuitem" data-click="tbSetSort('size-asc')">
+                  <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><line x1="2" y1="4" x2="6" y2="4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="2" y1="7" x2="9" y2="7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="2" y1="10" x2="12" y2="10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+                  <span>Size (smallest)</span>
                 </button>
               </div>
             </div>
@@ -15751,12 +15759,12 @@ function tbToggleSort(e){
 }
 function tbSetSort(mode){
   S._sort=mode;
-  const labels={name:'Name','name-desc':'Name','date':'Date','date-asc':'Date'};
+  const activeMode=mode==='name'?'name-asc':mode;
   const lbl=document.getElementById('tb-sort-label');
-  if(lbl) lbl.textContent=labels[mode]||'Name';
+  if(lbl) lbl.textContent=_sortStorageLabel(mode);
   // Highlight active item
-  document.querySelectorAll('.tb-sort-item').forEach(el=>{
-    el.classList.toggle('active',el.id==='sort-'+mode);
+  document.querySelectorAll('#tb-sort-menu .tb-sort-item').forEach(el=>{
+    el.classList.toggle('active',el.id==='sort-'+activeMode);
   });
   const m=document.getElementById('tb-sort-menu');
   if(m) m.classList.remove('open');
@@ -15770,14 +15778,10 @@ function tbSetSort(mode){
   renderFiles();
 }
 function _getSortFn(mode){
-  if(mode==='name') return(a,b)=>a.name.localeCompare(b.name);
-  if(mode==='name-desc') return(a,b)=>b.name.localeCompare(a.name);
-  if(mode==='date') return(a,b)=>new Date(b.captured_at||b.created_at)-new Date(a.captured_at||a.created_at);
-  if(mode==='date-asc') return(a,b)=>new Date(a.captured_at||a.created_at)-new Date(b.captured_at||b.created_at);
-  return(a,b)=>a.name.localeCompare(b.name);
+  return(a,b)=>_compareStorageFiles(a,b,mode);
 }
 // initialise sort state
-if(!S._sort) S._sort='name';
+if(!S._sort) S._sort='name-asc';
 
 // Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
 // EDIT PROFILE
