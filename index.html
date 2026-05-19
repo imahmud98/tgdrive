@@ -8881,46 +8881,25 @@ function _cloudVisibleFiles(){
   return files;
 }
 function _cloudApplyCurrentFolder(){
-  S.cloudFolderPath=S.cloudFolderPath||[];
-  if(S.cloudCurrentFolder && !_cloudFolderMap.has(String(S.cloudCurrentFolder.id))){
-    S.cloudCurrentFolder=null;
-    S.cloudFolderPath=[];
-  }
-  const key=_cloudKey(_cloudCurrentId());
-  S.cloudFolders=(_cloudFolderChildren.get(key)||[]).filter(f=>_cloudFolderHasCloud.has(String(f.id)));
-  S.cloudFiles=_cloudFilesByFolder.get(key)||[];
+  S.cloudFolderPath=[];
+  S.cloudCurrentFolder=null;
+  S.cloudFolders=[];
+  S.cloudFiles=_cloudFiles||[];
 }
 function renderCloudBreadcrumb(){
   const el=document.getElementById('cloud-breadcrumb');
   if(!el)return;
-  const path=S.cloudFolderPath||[];
-  let h=path.length
-    ? '<button data-click="cloudNav(-1)" class="text-teal-700 font-medium">Cloud</button>'
-    : '<span style="font-weight:500;color:#0f766e">Cloud</span>';
-  path.forEach((f,i)=>{
-    h+=' <span class="text-gray-400">/</span> ';
-    h+=i===path.length-1
-      ? `<span class="text-gray-700 font-medium">${esc(f.name)}</span>`
-      : `<button data-click="cloudNav(${i})" class="text-teal-700">${esc(f.name)}</button>`;
-  });
-  el.innerHTML=h;
+  el.innerHTML='<span style="font-weight:500;color:#0f766e">Cloud</span>';
 }
 function cloudNav(i){
-  if(i===-1){S.cloudFolderPath=[];S.cloudCurrentFolder=null;}
-  else{S.cloudFolderPath=S.cloudFolderPath.slice(0,i+1);S.cloudCurrentFolder=S.cloudFolderPath[i];}
+  S.cloudFolderPath=[];
+  S.cloudCurrentFolder=null;
   _cloudSelIds.clear();
   _cloudApplyCurrentFolder();
   renderCloudBrowser();
 }
 function cloudOpenFolderById(id){
-  const f=_cloudFolderMap.get(String(id));
-  if(!f)return;
-  S.cloudFolderPath=S.cloudFolderPath||[];
-  S.cloudFolderPath.push(f);
-  S.cloudCurrentFolder=f;
-  _cloudSelIds.clear();
-  _cloudApplyCurrentFolder();
-  renderCloudBrowser();
+  return;
 }
 function cloudToggleFolderSel(id){
   const sid=cloudFolderSelId(id);
@@ -9192,8 +9171,7 @@ async function loadCloudFiles(){
     await loadNode(null);
     _cloudFiles=[..._cloudFilesByFolder.values()].flat();
     const validFileIds=new Set(_cloudFiles.map(f=>String(f.id)));
-    const validFolderIds=new Set([..._cloudFolderHasCloud].map(id=>cloudFolderSelId(id)));
-    _cloudSelIds=new Set([..._cloudSelIds].filter(id=>validFileIds.has(String(id))||validFolderIds.has(String(id))));
+    _cloudSelIds=new Set([..._cloudSelIds].filter(id=>validFileIds.has(String(id))));
     _cloudApplyCurrentFolder();
     renderCloudBrowser();
   }catch(e){
