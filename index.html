@@ -2430,10 +2430,9 @@
 #view-app .file-row,#view-app .folder-chip,#view-app .list-row,#view-app tr.file-row{border-color:transparent !important;background:linear-gradient(180deg,#fff,#fcfffe) !important;box-shadow:0 8px 22px rgba(15,118,110,.045) !important;}
 #view-app .file-row:hover,#view-app .folder-chip:hover,#view-app .list-row:hover{border-color:rgba(20,184,166,.11) !important;box-shadow:var(--pk-shadow-lift) !important;}
 #view-app .file-list-header,#view-app th{background:transparent !important;border-color:var(--pk-line-soft) !important;color:#718094 !important;font-size:10.5px !important;letter-spacing:.5px !important;}
-#view-app #drop-zone,#view-app #cloud-drop-zone,#view-app .upload-zone,#view-app .empty-state{border-color:rgba(20,184,166,.20) !important;background:linear-gradient(180deg,rgba(255,255,255,.90),rgba(240,253,250,.70)) !important;box-shadow:0 10px 26px rgba(15,118,110,.055),inset 0 1px 0 rgba(255,255,255,.80) !important;}
+#view-app #drop-zone,#view-app #cloud-drop-zone,#view-app #external-drop-zone,#view-app .upload-zone,#view-app .empty-state{border-color:rgba(20,184,166,.20) !important;background:linear-gradient(180deg,rgba(255,255,255,.90),rgba(240,253,250,.70)) !important;box-shadow:0 10px 26px rgba(15,118,110,.055),inset 0 1px 0 rgba(255,255,255,.80) !important;}
 /* Cloud reuses the same browser chrome as My Drive. */
 #view-app #shared-breadcrumb{font-family:"Poppins",system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif !important;font-size:22px !important;font-weight:500 !important;line-height:1.2 !important;color:#0f766e !important;gap:4px !important;letter-spacing:0 !important;}
-#view-app #cloud-drop-zone{margin:0 !important;padding:24px !important;background:transparent !important;border:0 !important;border-radius:0 !important;box-shadow:none !important;}
 #view-app #cloud-files-label.gd-section-label{display:flex;align-items:center;justify-content:space-between;margin:12px 2px 8px !important;color:#5f6368 !important;font-size:11px !important;font-weight:700 !important;letter-spacing:.06em !important;text-transform:uppercase !important;}
 #view-app #cloud-files-label.gd-section-label .count{margin-left:auto;color:#9aa4b2 !important;font-size:12px !important;font-weight:500 !important;letter-spacing:0 !important;text-transform:none !important;}
 #view-app #cloud-file-list.grid-mode{grid-template-columns:repeat(auto-fill,minmax(160px,1fr)) !important;gap:10px !important;padding:12px !important;background:transparent !important;}
@@ -8894,12 +8893,15 @@ function _cloudApplyCurrentFolder(){
 function renderCloudBreadcrumb(){
   const el=document.getElementById('cloud-breadcrumb');
   if(!el)return;
-  let h='<button data-click="cloudNav(-1)" class="text-teal-700 hover:underline font-medium">Cloud</button>';
-  (S.cloudFolderPath||[]).forEach((f,i)=>{
+  const path=S.cloudFolderPath||[];
+  let h=path.length
+    ? '<button data-click="cloudNav(-1)" class="text-teal-700 font-medium">Cloud</button>'
+    : '<span style="font-weight:500;color:#0f766e">Cloud</span>';
+  path.forEach((f,i)=>{
     h+=' <span class="text-gray-400">/</span> ';
-    h+=i===S.cloudFolderPath.length-1
+    h+=i===path.length-1
       ? `<span class="text-gray-700 font-medium">${esc(f.name)}</span>`
-      : `<button data-click="cloudNav(${i})" class="text-teal-700 hover:underline">${esc(f.name)}</button>`;
+      : `<button data-click="cloudNav(${i})" class="text-teal-700">${esc(f.name)}</button>`;
   });
   el.innerHTML=h;
 }
@@ -9255,12 +9257,15 @@ function _externalApplyCurrentFolder(){
 function renderExternalBreadcrumb(){
   const el=document.getElementById('external-breadcrumb');
   if(!el)return;
-  let h='<button data-click="externalNav(-1)" class="text-teal-700 hover:underline font-medium">External Storage</button>';
-  (S.externalFolderPath||[]).forEach((f,i)=>{
+  const path=S.externalFolderPath||[];
+  let h=path.length
+    ? '<button data-click="externalNav(-1)" class="text-teal-700 font-medium">External Storage</button>'
+    : '<span style="font-weight:500;color:#0f766e">External Storage</span>';
+  path.forEach((f,i)=>{
     h+=' <span class="text-gray-400">/</span> ';
-    h+=i===S.externalFolderPath.length-1
+    h+=i===path.length-1
       ? `<span class="text-gray-700 font-medium">${esc(f.name)}</span>`
-      : `<button data-click="externalNav(${i})" class="text-teal-700 hover:underline">${esc(f.name)}</button>`;
+      : `<button data-click="externalNav(${i})" class="text-teal-700">${esc(f.name)}</button>`;
   });
   el.innerHTML=h;
 }
@@ -9594,6 +9599,24 @@ let _nasDevicesPromise = null;
 let _nasDevicesBackoffUntil = 0;
 let _nasDevicesFailCount = 0;
 
+function _mpdParseApiTimeMs(value){
+  if(!value) return 0;
+  let s=String(value).trim();
+  if(!s) return 0;
+  if(/^\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}/.test(s)) s=s.replace(/\s+/,'T');
+  if(!/(?:Z|[+-]\d{2}:?\d{2})$/i.test(s)) s+='Z';
+  const t=Date.parse(s);
+  return Number.isFinite(t) ? t : 0;
+}
+
+function _nasDeviceHeartbeatLive(d){
+  if(!d) return false;
+  const status=String(d.status||'').toLowerCase();
+  const lastSeenMs=_mpdParseApiTimeMs(d.last_seen || d.last_seen_at || d.updated_at);
+  const fresh=lastSeenMs ? (Date.now()-lastSeenMs) < 6*60*1000 : false;
+  return status==='online' && fresh;
+}
+
 async function _getNasDevicesCached(opts){
   opts = opts || {};
   const wake = !!opts.wake;
@@ -9676,13 +9699,13 @@ async function loadNasDevices(){
       const tunneled = Object.prototype.hasOwnProperty.call(tunnelMap, d.machine_id)
         ? !!tunnelMap[d.machine_id]
         : !!d.tunnel_connected;
-      const online = _nasDeviceIsLive(d) || tunneled;
+      const online = _nasDeviceHeartbeatLive(d) || tunneled;
       const dot = online
         ? '<span style="width:7px;height:7px;border-radius:50%;background:#22c55e;display:inline-block;flex-shrink:0;margin-right:1px"></span>'
-        : '<span style="width:7px;height:7px;border-radius:50%;background:#d1d5db;display:inline-block;flex-shrink:0;margin-right:1px"></span>';
+        : '<span style="width:7px;height:7px;border-radius:50%;background:#f59e0b;display:inline-block;flex-shrink:0;margin-right:1px"></span>';
       const statusLabel = online ? 'Online' : 'Offline';
       const tunnelBadge = tunneled
-        ? '<span title="Tunnel active - reachable from any network" style="font-size:9px;background:#E8F4F4;color:var(--p);border-radius:4px;padding:1px 4px;margin-left:4px;font-weight:600;flex-shrink:0;white-space:nowrap;">? TUNNEL</span>'
+        ? '<span title="Tunnel active - reachable from any network" style="display:inline-flex;align-items:center;gap:3px;font-size:9px;background:#E8F4F4;color:var(--p);border-radius:4px;padding:1px 4px;margin-left:4px;font-weight:600;flex-shrink:0;white-space:nowrap;"><svg width="10" height="10" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="M3.2 8.2a3.2 3.2 0 0 1 5.5-2.25l.65.65" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M12.8 7.8a3.2 3.2 0 0 1-5.5 2.25l-.65-.65" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/><path d="M9.2 4.1h2.2v2.2M6.8 11.9H4.6V9.7" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Tunnel</span></span>'
         : '';
       return `<button class="sb-grandchild" data-click="loadNasDeviceFiles('${esc(d.machine_id||'')}','${esc(d.display_name||'Agent PC')}');sbCloseAllCats()" title="${esc(d.display_name)} - ${statusLabel}" style="display:flex;align-items:center;gap:5px;width:100%;text-align:left;">
         ${dot}
@@ -9701,7 +9724,7 @@ async function loadNasDevices(){
 async function loadNasDeviceFiles(machineId, deviceName){
   showSection('drive');
   const bc = document.getElementById('breadcrumb');
-  if(bc) bc.innerHTML = '<span style="color:var(--p);font-weight:600">?? ' + esc(deviceName) + '</span>';
+  if(bc) bc.innerHTML = '<span style="font-weight:500;color:#0f766e">' + esc(deviceName || 'Agent Device') + '</span>';
   try{
     // Fetch root NAS files
     const nasR = await api('GET', '/nas/files');
