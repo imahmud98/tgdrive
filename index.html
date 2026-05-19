@@ -404,7 +404,7 @@
   .btn-primary, .btn-secondary { min-height: 44px !important; font-size: 14px !important; }
   #sel-bar            { padding: 7px 12px !important; font-size: 12px !important; }
   #delete-confirm     { left: 10px !important; right: 10px !important; bottom: 10px !important; min-width: 0 !important; max-width: none !important; transform: none !important; margin: 0 !important; }
-  #section-dashboard, #section-sync, #section-referral, #section-licenses, #section-cloud { padding: 0 !important; }
+  #section-dashboard, #section-sync, #section-referral, #section-licenses, #section-cloud, #section-external { padding: 0 !important; }
   .login-card         { padding: 22px 16px !important; border-radius: 16px !important; }
   .login-title        { font-size: 19px !important; }
   .hd-search-suggestions { left: -8px !important; right: -8px !important; border-radius: 0 0 12px 12px !important; }
@@ -3559,12 +3559,15 @@ async function handleAgentInstall(type){
 function setViewMode(mode){
   S.viewMode=mode;
   localStorage.setItem('mpd_view',mode);
-  // Sync both My Files and Cloud view toggle buttons
+  // Sync My Files, Cloud, and External Storage view toggle buttons
   document.getElementById('view-btn-list')?.classList.toggle('active-nav',mode==='list');
   document.getElementById('view-btn-grid')?.classList.toggle('active-nav',mode==='grid');
   document.getElementById('cloud-vt-list')?.classList.toggle('active-nav',mode==='list');
   document.getElementById('cloud-vt-grid')?.classList.toggle('active-nav',mode==='grid');
+  document.getElementById('external-vt-list')?.classList.toggle('active-nav',mode==='list');
+  document.getElementById('external-vt-grid')?.classList.toggle('active-nav',mode==='grid');
   if(S.activeSection==='cloud') renderCloudFileList();
+  else if(S.activeSection==='external') renderExternalFileList();
   else renderFiles();
 }
 
@@ -3580,14 +3583,19 @@ function showSection(section){
     _cloudSelIds.clear();
     renderCloudSelBar();
   }
+  if(S.activeSection==='external'&&section!=='external'&&typeof _externalSelIds!=='undefined'&&_externalSelIds){
+    _externalSelIds.clear();
+    renderExternalSelBar();
+  }
   document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active-nav'));
-  const btn=document.getElementById('nav-'+section);
+  const btn=document.getElementById('nav-'+section)||document.getElementById('cat-'+section);
   if(btn)btn.classList.add('active-nav');
   S.activeSection=section;
   if(section==='drive'){hdSearchShowAll();loadAll();}
   if(section==='dashboard'){loadDashboard();loadReferralCode();loadDashboardNew();}
   if(section==='licenses'){loadLicenses();}
   if(section==='cloud'){loadCloudFiles();}
+  if(section==='external'){loadExternalFiles();}
   if(section==='bin'){loadBin();}
   if(section==='shared'){loadSharedWithMe();}
   // NOTE: sync section is intentionally NOT shown from web nav - Android only
@@ -4092,6 +4100,13 @@ async function moveSelectedToChosen(){
     S._moveContext='';
     _cloudSelIds.clear();
     await loadCloudFiles();
+    toast(`${moved} item${moved===1?'':'s'} moved`,'success');
+    return;
+  }
+  if(S._moveContext==='external'){
+    S._moveContext='';
+    _externalSelIds.clear();
+    await loadExternalFiles();
     toast(`${moved} item${moved===1?'':'s'} moved`,'success');
     return;
   }
@@ -9189,6 +9204,371 @@ async function loadCloudFiles(){
   }
 }
 
+
+// External Storage tab: mirror My Drive with an external-device-only recursive folder/file view.
+var _externalFolderChildren = new Map();
+var _externalSelIds = new Set();
+var _externalFiles = [];
+var _externalFilesByFolder = new Map();
+var _externalFolderMap = new Map();
+var _externalFolderHasExternal = new Set();
+
+function _externalKey(folderId){ return folderId===null || folderId===undefined ? 'root' : String(folderId); }
+function _externalCurrentId(){ return S.externalCurrentFolder && S.externalCurrentFolder.id!==undefined ? S.externalCurrentFolder.id : null; }
+function externalFolderSelId(id){ return 'external-folder:' + String(id); }
+function isExternalFolderSelId(id){ return String(id).startsWith('external-folder:'); }
+function externalFolderIdFromSel(id){ return Number(String(id).slice(16)); }
+function externalSelectedFolderIds(){ return [..._externalSelIds].filter(isExternalFolderSelId).map(externalFolderIdFromSel).filter(Number.isFinite); }
+function externalSelectedFileIds(){ return [..._externalSelIds].filter(id=>!isExternalFolderSelId(id)); }
+function externalTbToggleSort(e){
+  if(e) e.stopPropagation();
+  document.getElementById('external-sort-menu')?.classList.toggle('open');
+}
+function _externalSortValue(){
+  const sel=document.getElementById('external-sort-sel');
+  return sel ? sel.value : 'name-asc';
+}
+function _externalVisibleFiles(){
+  const files=[...(S.externalFiles||[])];
+  const sort=_externalSortValue();
+  files.sort(function(a,b){
+    const an=a.name||a.filename||'', bn=b.name||b.filename||'';
+    if(sort==='date-desc') return new Date(b.captured_at||b.created_at||0)-new Date(a.captured_at||a.created_at||0);
+    if(sort==='date-asc') return new Date(a.captured_at||a.created_at||0)-new Date(b.captured_at||b.created_at||0);
+    if(sort==='name-desc') return bn.localeCompare(an);
+    if(sort==='size-desc') return (b.size||0)-(a.size||0);
+    if(sort==='size-asc') return (a.size||0)-(b.size||0);
+    return an.localeCompare(bn);
+  });
+  return files;
+}
+function _externalApplyCurrentFolder(){
+  S.externalFolderPath=S.externalFolderPath||[];
+  if(S.externalCurrentFolder && !_externalFolderMap.has(String(S.externalCurrentFolder.id))){
+    S.externalCurrentFolder=null;
+    S.externalFolderPath=[];
+  }
+  const key=_externalKey(_externalCurrentId());
+  S.externalFolders=(_externalFolderChildren.get(key)||[]).filter(f=>_externalFolderHasExternal.has(String(f.id)));
+  S.externalFiles=_externalFilesByFolder.get(key)||[];
+}
+function renderExternalBreadcrumb(){
+  const el=document.getElementById('external-breadcrumb');
+  if(!el)return;
+  let h='<button data-click="externalNav(-1)" class="text-teal-700 hover:underline font-medium">External Storage</button>';
+  (S.externalFolderPath||[]).forEach((f,i)=>{
+    h+=' <span class="text-gray-400">/</span> ';
+    h+=i===S.externalFolderPath.length-1
+      ? `<span class="text-gray-700 font-medium">${esc(f.name)}</span>`
+      : `<button data-click="externalNav(${i})" class="text-teal-700 hover:underline">${esc(f.name)}</button>`;
+  });
+  el.innerHTML=h;
+}
+function externalNav(i){
+  if(i===-1){S.externalFolderPath=[];S.externalCurrentFolder=null;}
+  else{S.externalFolderPath=S.externalFolderPath.slice(0,i+1);S.externalCurrentFolder=S.externalFolderPath[i];}
+  _externalSelIds.clear();
+  _externalApplyCurrentFolder();
+  renderExternalBrowser();
+}
+function externalOpenFolderById(id){
+  const f=_externalFolderMap.get(String(id));
+  if(!f)return;
+  S.externalFolderPath=S.externalFolderPath||[];
+  S.externalFolderPath.push(f);
+  S.externalCurrentFolder=f;
+  _externalSelIds.clear();
+  _externalApplyCurrentFolder();
+  renderExternalBrowser();
+}
+function externalToggleFolderSel(id){
+  const sid=externalFolderSelId(id);
+  _externalSelIds.has(sid)?_externalSelIds.delete(sid):_externalSelIds.add(sid);
+  renderExternalFolders();
+  renderExternalSelBar();
+}
+function externalToggleSel(id){
+  const sid=String(id);
+  _externalSelIds.has(sid)?_externalSelIds.delete(sid):_externalSelIds.add(sid);
+  renderExternalFileList();
+  renderExternalSelBar();
+}
+function externalSelAll(){
+  const files=_externalVisibleFiles();
+  const all=files.length&&files.every(f=>_externalSelIds.has(String(f.id)));
+  files.forEach(f=>all?_externalSelIds.delete(String(f.id)):_externalSelIds.add(String(f.id)));
+  renderExternalFileList();
+  renderExternalSelBar();
+}
+function externalClearSel(){
+  _externalSelIds.clear();
+  renderExternalFileList();
+  renderExternalFolders();
+  renderExternalSelBar();
+}
+function renderExternalSelBar(){
+  const el=document.getElementById('external-sel-bar');
+  const cnt=_externalSelIds.size;
+  const folderCnt=externalSelectedFolderIds().length;
+  const fileCnt=cnt-folderCnt;
+  ['external-tb-download','external-tb-share','external-tb-move','external-tb-delete'].forEach(id=>{
+    const btn=document.getElementById(id);
+    if(!btn)return;
+    const enabled=cnt>0 && !(id==='external-tb-share'&&folderCnt>0);
+    btn.classList.toggle('active',enabled);
+    btn.disabled=!enabled;
+    if(id==='external-tb-share'&&folderCnt>0)btn.title='Folder sharing will be added later';
+    else if(id==='external-tb-share')btn.title='Share selected';
+  });
+  if(!el)return;
+  if(!cnt){el.classList.add('hidden');el.innerHTML='';return;}
+  el.classList.remove('hidden');
+  const label=[];
+  if(fileCnt)label.push(`${fileCnt} file${fileCnt===1?'':'s'}`);
+  if(folderCnt)label.push(`${folderCnt} folder${folderCnt===1?'':'s'}`);
+  el.innerHTML=`<div class="flex items-center gap-3 flex-wrap w-full">
+    <span class="text-sm font-medium text-blue-700">${label.join(' and ')} selected</span>
+    <button data-click="externalClearSel()" class="text-xs text-gray-400 hover:text-gray-600 ml-auto">Clear selection</button>
+  </div>`;
+}
+function renderExternalFolders(){
+  const el=document.getElementById('external-folder-list');
+  if(!el)return;
+  let labelEl=document.getElementById('external-folders-label');
+  if(!labelEl){
+    labelEl=document.createElement('div');
+    labelEl.id='external-folders-label';
+    labelEl.className='gd-section-label';
+    el.parentNode.insertBefore(labelEl,el);
+  }
+  if(!(S.externalFolders||[]).length){
+    el.innerHTML='';
+    labelEl.style.display='none';
+    return;
+  }
+  labelEl.style.display='';
+  labelEl.innerHTML='<span>Folders</span>';
+  el.innerHTML=(S.externalFolders||[]).map(f=>{
+    const sel=_externalSelIds.has(externalFolderSelId(f.id));
+    return `<div class="fade-in flex items-center justify-between px-3 py-2 rounded-lg hover:bg-gray-100 group cursor-pointer border ${sel?'border-teal-300 bg-teal-50':'border-transparent hover:border-gray-200'}" data-click="externalOpenFolderById(${f.id})">
+      <div class="flex items-center gap-2 min-w-0">
+        <span style="display:flex;align-items:center;justify-content:center;flex-shrink:0;"><svg width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M2 5.5A1.5 1.5 0 0 1 3.5 4H8l1.5 1.5H16.5A1.5 1.5 0 0 1 18 7v8a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 2 15V5.5Z" fill="#1F2937"/></svg></span>
+        <span class="text-sm font-medium text-gray-700 truncate">${esc(f.name)}</span>
+      </div>
+      <button type="button" data-click="event.stopPropagation();externalToggleFolderSel(${f.id})" class="grid-file-cb" aria-label="Select folder ${esc(f.name)}" title="Select folder" style="opacity:${sel?'1':'0'};width:20px;height:20px;border-radius:6px;border:1.5px solid ${sel?'var(--p)':'#CBD5E1'};background:${sel?'var(--p)':'#fff'};color:#fff;display:flex;align-items:center;justify-content:center;transition:opacity .15s,border-color .15s,background .15s;">
+        ${sel?'<svg width="13" height="13" viewBox="0 0 16 16" fill="none"><path d="M3.5 8.3l2.7 2.7 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>':''}
+      </button>
+    </div>`;
+  }).join('');
+}
+function renderExternalFileList(){
+  const el=document.getElementById('external-file-list');
+  if(!el)return;
+  let filesLabelEl=document.getElementById('external-files-label');
+  if(!filesLabelEl){
+    filesLabelEl=document.createElement('div');
+    filesLabelEl.id='external-files-label';
+    filesLabelEl.className='gd-section-label';
+    el.parentNode.insertBefore(filesLabelEl,el);
+  }
+  const files=_externalVisibleFiles();
+  const hasFolders=(S.externalFolders||[]).length>0;
+  if(!files.length&&!hasFolders){
+    filesLabelEl.style.display='none';
+    el.className='';
+    el.style.cssText='';
+    el.innerHTML=filesEmptyHtml('External storage files will appear here, including files inside your folders.');
+    return;
+  }
+  if(!files.length){
+    filesLabelEl.style.display='none';
+    el.innerHTML='';
+    return;
+  }
+  filesLabelEl.style.display='';
+  filesLabelEl.innerHTML=`<span>Files</span><span class="count">${files.length} file${files.length!==1?'s':''}</span>`;
+  const isGrid=S.viewMode==='grid';
+  const allSel=files.every(f=>_externalSelIds.has(String(f.id)));
+  if(isGrid){
+    el.className='grid-mode';
+    el.style.cssText='display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px;padding:12px;background:transparent;';
+    el.innerHTML=files.map(f=>{
+      const id=String(f.id);
+      const name=f.name||f.filename||'Untitled';
+      const sel=_externalSelIds.has(id);
+      const e2eeThumb=f.storage_version==='client_e2ee_s3'&&isImageFile(name);
+      const hasThumb=e2eeThumb||(f.storage_version!=='client_e2ee_s3'&&(f.has_thumbnail||isImageFile(name)||f.thumbnail_path));
+      return `<div class="fade-in" data-file-id="${esc(id)}" data-click="externalToggleSel('${esc(id)}')" ondblclick="event.stopPropagation();openNasPreview('${esc(id)}')"
+        onmouseenter="var cb=this.querySelector('.grid-file-cb');if(cb&&!cb.checked)cb.style.opacity='1';"
+        onmouseleave="var cb=this.querySelector('.grid-file-cb');if(cb&&!cb.checked)cb.style.opacity='0';"
+        style="display:flex;flex-direction:column;border-radius:12px;overflow:hidden;background:#fff;border:2px solid ${sel?'#2DD4BF':'#E5E7EB'};cursor:pointer;position:relative;">
+        <div style="width:100%;aspect-ratio:1;background:#F2F2F7;display:flex;align-items:center;justify-content:center;overflow:hidden;position:relative;">
+          ${hasThumb?`<img data-thumb-id="${esc(id)}" data-thumb-nas="true" style="width:100%;height:100%;object-fit:cover;display:none" alt="${esc(name)}" onerror="this.style.display='none';this.nextElementSibling.style.cssText='display:flex;align-items:center;justify-content:center;width:100%;height:100%;font-size:36px;'"/><span style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;font-size:36px;">${fileIcon(name)}</span>`:`<span style="font-size:36px;">${fileIcon(name)}</span>`}
+          <div style="position:absolute;top:6px;left:6px;"><input type="checkbox" ${sel?'checked':''} onchange="externalToggleSel('${esc(id)}')" data-click="event.stopPropagation()" style="width:18px;height:18px;accent-color:#0D6D6E;opacity:${sel?'1':'0'};transition:opacity 0.15s;" class="grid-file-cb"/></div>
+        </div>
+        <div style="padding:8px 10px;background:#fff;">
+          <div style="font-size:12px;font-weight:500;color:#1F2937;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${esc(name)}">${esc(name)}</div>
+          <div style="font-size:11px;color:#9CA3AF;margin-top:2px;">${fmtSize(_displayFileSize(f))} - NAS</div>
+        </div>
+      </div>`;
+    }).join('');
+  }else{
+    el.className='';
+    el.style.cssText='';
+    const isMob=window.innerWidth<768;
+    el.innerHTML=`<div class="mob-hide-selrow" style="display:flex;align-items:center;height:40px;padding:0 16px;border-bottom:1px solid #e0e0e0;background:#fff;gap:16px;flex-shrink:0;">
+      <input type="checkbox" ${allSel?'checked':''} onchange="externalSelAll()" title="Select all" style="width:15px;height:15px;flex-shrink:0;cursor:pointer;accent-color:#0D6D6E;"/>
+      <span style="flex:1;font-size:12px;font-weight:600;color:#5f6368;text-transform:uppercase;letter-spacing:0.4px;">Name</span>
+      <span style="width:130px;font-size:12px;font-weight:600;color:#5f6368;text-transform:uppercase;letter-spacing:0.4px;text-align:right;flex-shrink:0;${isMob?'display:none':''}">Date</span>
+      <span style="width:80px;font-size:12px;font-weight:600;color:#5f6368;text-transform:uppercase;letter-spacing:0.4px;text-align:right;flex-shrink:0;${isMob?'display:none':''}">Size</span>
+      <span style="width:20px;flex-shrink:0;"></span>
+    </div>${files.map(f=>{
+      const id=String(f.id);
+      const name=f.name||f.filename||'Untitled';
+      const sel=_externalSelIds.has(id);
+      const e2eeThumb=f.storage_version==='client_e2ee_s3'&&isImageFile(name);
+      const hasThumb=e2eeThumb||(f.storage_version!=='client_e2ee_s3'&&(f.has_thumbnail||isImageFile(name)||f.thumbnail_path));
+      const dateStr=fmtDate(f.captured_at||f.created_at);
+      return `<div class="fade-in" data-file-id="${esc(id)}" data-click="externalToggleSel('${esc(id)}')" ondblclick="event.stopPropagation();openNasPreview('${esc(id)}')" style="display:flex;flex-direction:row;align-items:center;height:52px;padding:0 16px;gap:16px;background:${sel?'#e8f0fe':'#fff'};border-bottom:1px solid ${sel?'#c5d8fd':'#f1f3f4'};cursor:pointer;transition:background 0.1s;${sel?'border-left:3px solid #1a73e8;':''}">
+        <input type="checkbox" ${sel?'checked':''} onchange="externalToggleSel('${esc(id)}')" data-click="event.stopPropagation()" style="width:15px;height:15px;flex-shrink:0;cursor:pointer;accent-color:#0D6D6E;opacity:${sel?'1':'0'};transition:opacity 0.1s;" onmouseenter="this.style.opacity='1'" onmouseleave="if(!this.checked)this.style.opacity='0'"/>
+        ${hasThumb?`<div style="width:36px;height:36px;border-radius:6px;overflow:hidden;flex-shrink:0;background:#f1f3f4;display:flex;align-items:center;justify-content:center;"><img data-thumb-id="${esc(id)}" data-thumb-nas="true" style="width:100%;height:100%;object-fit:cover;display:none" alt="${esc(name)}" onerror="this.style.display='none';this.nextSibling.style.display='flex'"/><span style="display:flex;align-items:center;justify-content:center;font-size:20px;">${fileIcon(name)}</span></div>`:`<div style="width:36px;height:36px;border-radius:6px;flex-shrink:0;background:#f1f3f4;display:flex;align-items:center;justify-content:center;font-size:20px;">${fileIcon(name)}</div>`}
+        <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:400;color:#202124;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:'Poppins',sans-serif;">${esc(name)}</div>${isMob?`<div style="font-size:12px;color:#6e6e73;margin-top:1px;font-family:'Poppins',sans-serif;">${dateStr} - ${fmtSize(_displayFileSize(f))} - NAS</div>`:''}</div>
+        <span style="width:130px;font-size:13px;color:#5f6368;text-align:right;flex-shrink:0;font-family:'Poppins',sans-serif;${isMob?'display:none':''}">${dateStr}</span>
+        <span style="width:80px;font-size:13px;color:#5f6368;text-align:right;flex-shrink:0;font-family:'Poppins',sans-serif;${isMob?'display:none':''}">${fmtSize(_displayFileSize(f))} - NAS</span>
+        <span style="width:20px;flex-shrink:0;"></span>
+      </div>`;
+    }).join('')}`;
+  }
+  setTimeout(applyThumbnails,50);
+}
+function renderExternalBrowser(){
+  renderExternalBreadcrumb();
+  renderExternalSelBar();
+  renderExternalFolders();
+  renderExternalFileList();
+}
+function externalTbSetSort(sort){
+  const sel=document.getElementById('external-sort-sel');
+  if(sel)sel.value=sort;
+  document.querySelectorAll('#external-sort-menu .tb-sort-item').forEach(btn=>btn.classList.remove('active'));
+  const activeId={ 'name-asc':'external-sort-name','name-desc':'external-sort-name-desc','date-desc':'external-sort-date','date-asc':'external-sort-date-asc','size-desc':'external-sort-size-desc','size-asc':'external-sort-size-asc' }[sort];
+  if(activeId)document.getElementById(activeId)?.classList.add('active');
+  const labelMap={'date-desc':'Date','date-asc':'Date','name-asc':'Name','name-desc':'Name','size-desc':'Size','size-asc':'Size'};
+  const lbl=document.getElementById('external-tb-sort-label');
+  if(lbl)lbl.textContent=labelMap[sort]||'Sort';
+  document.getElementById('external-sort-menu')?.classList.remove('open');
+  renderExternalFileList();
+}
+async function externalSelDownload(){
+  const fileIds=externalSelectedFileIds();
+  const folderIds=externalSelectedFolderIds();
+  if(folderIds.length&&!fileIds.length){
+    for(const folderId of folderIds){
+      const f=_externalFolderMap.get(String(folderId));
+      await downloadFolder(folderId,(f&&f.name)||'folder');
+    }
+    return;
+  }
+  if(folderIds.length)toast('Download selected folders separately for now','info');
+  if(!fileIds.length)return;
+  const dirHandle=await _pickSaveDir();
+  if(dirHandle===false)return;
+  S.downloadQueue=fileIds.map(id=>{
+    const f=_externalFiles.find(x=>String(x.id)===String(id));
+    return {id,name:f?.name||f?.filename||'file',_nas:true,status:'pending',progress:0};
+  });
+  showModal('download-modal');
+  renderDownloadQ();
+  await runDownloads(dirHandle);
+}
+async function externalSelShare(){
+  const folderIds=externalSelectedFolderIds();
+  if(folderIds.length){shareFolder(Number(folderIds[0]));return;}
+  const ids=externalSelectedFileIds().map(String).filter(Boolean);
+  if(!ids.length){toast('Select files to share','error');return;}
+  S.files=S.externalFiles||[];
+  openShareDialog(ids);
+}
+async function externalOpenMoveSelectedModal(){
+  if(!_externalSelIds.size){toast('Select items first','info');return;}
+  S._moveContext='external';
+  S.selectedIds=new Set([...externalSelectedFileIds().map(String), ...externalSelectedFolderIds().map(folderSelId)]);
+  S.files=S.externalFiles||[];
+  S.folders=S.externalFolders||[];
+  await openMoveSelectedModal();
+}
+async function externalSelDelete(){
+  const ids=externalSelectedFileIds();
+  const folderIds=externalSelectedFolderIds();
+  const total=ids.length+folderIds.length;
+  if(!total)return;
+  if(!await confirmDialog('Move '+total+' selected item'+(total===1?'':'s')+' to Bin?'))return;
+  try{
+    for(const folderId of folderIds)await api('POST','/folders/'+folderId+'/trash');
+    for(const id of ids)await api('POST','/nas/file/'+id+'/trash');
+    toast('Moved '+total+' item'+(total===1?'':'s')+' to Bin','success');
+    _externalSelIds.clear();
+    await loadExternalFiles();
+    loadDashboard().catch(()=>{});
+  }catch(e){toast('Move to Bin failed: '+userSafeErrorMessage(e,'Could not move selected items to Bin.'),'error');}
+}
+async function loadExternalFiles(){
+  const el=document.getElementById('external-file-list');
+  if(el){
+    el.className='';
+    el.style.cssText='';
+    el.innerHTML='<div class="external-empty-panel" role="status"><div class="external-empty-inner"><span class="spinner"></span><div class="external-empty-copy">Loading external storage files...</div></div></div>';
+  }
+  try{
+    _externalFolderChildren=new Map();
+    _externalFilesByFolder=new Map();
+    _externalFolderMap=new Map();
+    _externalFolderHasExternal=new Set();
+    const seenFolders=new Set();
+    async function loadNode(parentId){
+      const key=_externalKey(parentId);
+      if(parentId!==null&&seenFolders.has(String(parentId)))return _externalFolderHasExternal.has(String(parentId));
+      if(parentId!==null)seenFolders.add(String(parentId));
+      const folderPath=parentId===null?'/folders':'/folders?parent_id='+encodeURIComponent(parentId);
+      const filePath=parentId===null?'/nas/files':'/nas/files?folder_id='+encodeURIComponent(parentId);
+      const [foldersResp,filesResp]=await Promise.all([
+        api('GET',folderPath).catch(()=>({folders:[]})),
+        api('GET',filePath).catch(()=>({files:[]}))
+      ]);
+      const folders=(foldersResp.folders||foldersResp.items||[]).map(f=>({...f,name:f.name||'Untitled folder'}));
+      _externalFolderChildren.set(key,folders);
+      folders.forEach(f=>_externalFolderMap.set(String(f.id),f));
+      const files=(filesResp.files||filesResp.items||[]).map(f=>({...f,id:f.file_id||f.id,name:f.filename||f.name||'Untitled',_nas:true,folder_id:parentId})).filter(f=>f.id!==undefined&&f.id!==null);
+      _externalFilesByFolder.set(key,files);
+      let hasExternal=files.length>0;
+      for(const folder of folders){
+        const childHas=await loadNode(folder.id);
+        if(childHas)hasExternal=true;
+      }
+      if(parentId!==null&&hasExternal)_externalFolderHasExternal.add(String(parentId));
+      return hasExternal;
+    }
+    await loadNode(null);
+    _externalFiles=[..._externalFilesByFolder.values()].flat();
+    const validFileIds=new Set(_externalFiles.map(f=>String(f.id)));
+    const validFolderIds=new Set([..._externalFolderHasExternal].map(id=>externalFolderSelId(id)));
+    _externalSelIds=new Set([..._externalSelIds].filter(id=>validFileIds.has(String(id))||validFolderIds.has(String(id))));
+    _externalApplyCurrentFolder();
+    renderExternalBrowser();
+  }catch(e){
+    if(el){
+      el.className='';
+      el.style.cssText='';
+      el.innerHTML=filesEmptyHtml('External storage files could not be loaded. Try again in a moment.');
+    }
+    renderExternalSelBar();
+  }
+}
+
+function handleDropExternal(e){
+  e.preventDefault();
+  enqueueFiles(e.dataTransfer.files);
+}
 function enqueueFilesCloud(files){
   // Force cloud upload regardless of NAS status for THIS batch only.
   // Save the dashboard-selected destination so we can restore it after this
@@ -13270,7 +13650,7 @@ async function revokeShare(shareId) {
       </div>
 
       <!-- External Storage (NAS + Agent) -->
-      <button class="sb-cat nav-btn" id="cat-external" data-click="sbToggleCat('external',event)">
+      <button class="sb-cat nav-btn" id="cat-external" data-click="showSection('external');sbToggleCat('external',event)">
         <span class="sb-icon">
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
             <rect x="1.5" y="3.5" width="13" height="9" rx="1.2" stroke="currentColor" stroke-width="1.3" fill="none"/>
@@ -13643,6 +14023,134 @@ async function revokeShare(shareId) {
                 </div>
                 <div class="cloud-empty-title">No cloud files</div>
                 <div class="cloud-empty-copy">Upload files to cloud storage and they will appear here.</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+
+      <div id="section-external" class="app-section hidden flex-1 flex flex-col overflow-hidden">
+        <!-- Toolbar - identical structure to My Files -->
+        <div class="drive-tb">
+          <!-- LEFT: breadcrumb -->
+          <div class="tb-left">
+            <div id="external-breadcrumb" class="text-sm" style="color:var(--sub);flex:1;min-width:0;overflow:hidden;display:flex;align-items:center;gap:6px;">
+              <span style="font-weight:500;color:inherit">External Storage</span>
+              <span style="display:none" id="external-file-count"></span>
+            </div>
+          </div>
+          <!-- RIGHT: action icons - sort - view toggle -->
+          <div class="tb-right">
+            <!-- File action icons: faded until selection -->
+            <button id="external-tb-download" class="tb-act" data-click="externalSelDownload()" title="Download selected" disabled>
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+                <line x1="8" y1="2" x2="8" y2="11" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+                <polyline points="4.5,7.5 8,11 11.5,7.5" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+                <line x1="2" y1="14" x2="14" y2="14" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/>
+              </svg>
+            </button>
+            <button id="external-tb-share" class="tb-act" data-click="externalSelShare()" title="Share selected" disabled>
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+                <circle cx="12.5" cy="3" r="1.8" stroke="currentColor" stroke-width="1.3" fill="none"/>
+                <circle cx="12.5" cy="13" r="1.8" stroke="currentColor" stroke-width="1.3" fill="none"/>
+                <circle cx="3.5" cy="8" r="1.8" stroke="currentColor" stroke-width="1.3" fill="none"/>
+                <line x1="5.2" y1="7.1" x2="10.8" y2="3.9" stroke="currentColor" stroke-width="1.2"/>
+                <line x1="5.2" y1="8.9" x2="10.8" y2="12.1" stroke="currentColor" stroke-width="1.2"/>
+              </svg>
+            </button>
+            <button id="external-tb-move" class="tb-act" data-click="externalOpenMoveSelectedModal()" title="Move selected" disabled>
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+                <path d="M2.2 5.2A1.2 1.2 0 0 1 3.4 4h3.1l1.2 1.2h5a1.2 1.2 0 0 1 1.2 1.2v5.1a1.2 1.2 0 0 1-1.2 1.2H3.4a1.2 1.2 0 0 1-1.2-1.2V5.2Z" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linejoin="round"/>
+                <path d="M6.4 8.5h4.1m0 0L9 7m1.5 1.5L9 10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </button>
+            <button id="external-tb-delete" class="tb-act del" data-click="externalSelDelete()" title="Delete selected" disabled>
+              <svg width="15" height="15" viewBox="0 0 16 16" fill="none">
+                <polyline points="2,4 14,4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+                <path d="M5 4V3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v1" stroke="currentColor" stroke-width="1.3" fill="none"/>
+                <rect x="3" y="4" width="10" height="10" rx="1.2" stroke="currentColor" stroke-width="1.3" fill="none"/>
+                <line x1="6.5" y1="7" x2="6.5" y2="11" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+                <line x1="9.5" y1="7" x2="9.5" y2="11" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/>
+              </svg>
+            </button>
+
+            <div class="tb-divider"></div>
+
+            <!-- Sort dropdown -->
+            <div class="tb-sort-wrap">
+              <button class="tb-sort-btn" id="external-tb-sort-btn"
+                      data-click="externalTbToggleSort(event)" title="Sort">
+                <svg width="13" height="13" viewBox="0 0 14 14" fill="none">
+                  <line x1="2" y1="4" x2="12" y2="4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+                  <line x1="2" y1="7" x2="9" y2="7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+                  <line x1="2" y1="10" x2="6" y2="10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/>
+                </svg>
+                <span class="sort-label" id="external-tb-sort-label">Date</span>
+              </button>
+              <div class="tb-sort-menu" id="external-sort-menu" role="menu">
+                <button class="tb-sort-item" id="external-sort-name" role="menuitem" data-click="externalTbSetSort('name-asc')">
+                  <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><line x1="2" y1="4" x2="7" y2="4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="2" y1="7" x2="10" y2="7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="2" y1="10" x2="5" y2="10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+                  <span>Name (A-Z)</span>
+                </button>
+                <button class="tb-sort-item" id="external-sort-name-desc" role="menuitem" data-click="externalTbSetSort('name-desc')">
+                  <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><line x1="2" y1="4" x2="5" y2="4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="2" y1="7" x2="10" y2="7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="2" y1="10" x2="7" y2="10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+                  <span>Name (Z-A)</span>
+                </button>
+                <button class="tb-sort-item active" id="external-sort-date" role="menuitem" data-click="externalTbSetSort('date-desc')">
+                  <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="2.5" width="11" height="10" rx="1" stroke="currentColor" stroke-width="1.3" fill="none"/><line x1="5" y1="1.5" x2="5" y2="4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="9" y1="1.5" x2="9" y2="4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="1.5" y1="6" x2="12.5" y2="6" stroke="currentColor" stroke-width="1.2"/></svg>
+                  <span>Date (newest)</span>
+                </button>
+                <button class="tb-sort-item" id="external-sort-date-asc" role="menuitem" data-click="externalTbSetSort('date-asc')">
+                  <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><rect x="1.5" y="2.5" width="11" height="10" rx="1" stroke="currentColor" stroke-width="1.3" fill="none"/><line x1="5" y1="1.5" x2="5" y2="4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="9" y1="1.5" x2="9" y2="4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="1.5" y1="6" x2="12.5" y2="6" stroke="currentColor" stroke-width="1.2"/></svg>
+                  <span>Date (oldest)</span>
+                </button>
+                <button class="tb-sort-item" id="external-sort-size-desc" role="menuitem" data-click="externalTbSetSort('size-desc')">
+                  <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><line x1="2" y1="4" x2="12" y2="4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="2" y1="7" x2="9" y2="7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="2" y1="10" x2="6" y2="10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+                  <span>Largest first</span>
+                </button>
+                <button class="tb-sort-item" id="external-sort-size-asc" role="menuitem" data-click="externalTbSetSort('size-asc')">
+                  <svg width="13" height="13" viewBox="0 0 14 14" fill="none"><line x1="2" y1="4" x2="6" y2="4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="2" y1="7" x2="9" y2="7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/><line x1="2" y1="10" x2="12" y2="10" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+                  <span>Smallest first</span>
+                </button>
+              </div>
+              <select id="external-sort-sel" style="display:none" onchange="renderExternalFileList()">
+                <option value="date-desc">Newest</option><option value="date-asc">Oldest</option>
+                <option value="name-asc">Name A-Z</option><option value="name-desc">Name Z-A</option>
+                <option value="size-desc">Largest</option><option value="size-asc">Smallest</option>
+              </select>
+            </div>
+
+            <div class="tb-divider"></div>
+
+            <!-- View toggle - synced with My Files via shared setViewMode -->
+            <div class="vt-wrap">
+              <button class="vt-btn active-nav" id="external-vt-list" title="List view" data-click="setViewMode('list')">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="0" y="2" width="16" height="2" rx="1" fill="currentColor"/><rect x="0" y="7" width="16" height="2" rx="1" fill="currentColor"/><rect x="0" y="12" width="16" height="2" rx="1" fill="currentColor"/></svg>
+              </button>
+              <button class="vt-btn" id="external-vt-grid" title="Grid view" data-click="setViewMode('grid')">
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><rect x="0" y="0" width="6" height="6" rx="1.5" fill="currentColor"/><rect x="10" y="0" width="6" height="6" rx="1.5" fill="currentColor"/><rect x="0" y="10" width="6" height="6" rx="1.5" fill="currentColor"/><rect x="10" y="10" width="6" height="6" rx="1.5" fill="currentColor"/></svg>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Selection bar - identical structure to My Files sel-bar -->
+        <div id="external-sel-bar" class="hidden" style="background:#EFF6FF;border-bottom:1px solid #BFDBFE;padding:8px 20px;flex-shrink:0;font-size:13px;color:#1D4ED8;align-items:center;gap:12px;"></div>
+
+        <!-- Drop zone + external file list -->
+        <div id="external-drop-zone" class="drop-zone scrollable flex-1"
+          ondrop="handleDropExternal(event)" ondragover="event.preventDefault()" ondragleave="event.preventDefault()"
+          style="padding:8px 24px 24px;">
+          <div id="external-folder-list" class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2 mb-4"></div>
+          <div id="external-file-list">
+            <div class="external-empty-panel" role="status">
+              <div class="external-empty-inner">
+                <div class="external-empty-icon" aria-hidden="true">
+                  <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19H8a6 6 0 1 1 5.5-8.4A4.8 4.8 0 1 1 17.5 19Z"/><path d="M12 10v6"/><path d="M9.5 12.5 12 10l2.5 2.5"/></svg>
+                </div>
+                <div class="external-empty-title">No external storage files</div>
+                <div class="external-empty-copy">External device files will appear here.</div>
               </div>
             </div>
           </div>
