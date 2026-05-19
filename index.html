@@ -2673,6 +2673,9 @@ const S={
   SESSION_TIMEOUT_MS: 30*60*1000,
   SESSION_WARN_MS:    28*60*1000,
   viewMode: localStorage.getItem('mpd_view')||'list',  // 'list' or 'grid'
+  _sort: localStorage.getItem('mpd_drive_sort')||'name-asc',
+  cloudSort: localStorage.getItem('mpd_cloud_sort')||'date-desc',
+  externalSort: localStorage.getItem('mpd_external_sort')||'date-desc',
   deletingIds: new Set(),  // ids currently being deleted (spinner)
   loginFailCount: 0,
   authConfig:null,
@@ -3555,9 +3558,8 @@ async function handleAgentInstall(type){
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
 // SIDEBAR NAVIGATION
 // â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
-function setViewMode(mode){
-  S.viewMode=mode;
-  localStorage.setItem('mpd_view',mode);
+function _syncViewModeButtons(){
+  const mode=S.viewMode||'list';
   // Sync My Files, Cloud, and External Storage view toggle buttons
   document.getElementById('view-btn-list')?.classList.toggle('active-nav',mode==='list');
   document.getElementById('view-btn-grid')?.classList.toggle('active-nav',mode==='grid');
@@ -3565,6 +3567,11 @@ function setViewMode(mode){
   document.getElementById('cloud-vt-grid')?.classList.toggle('active-nav',mode==='grid');
   document.getElementById('external-vt-list')?.classList.toggle('active-nav',mode==='list');
   document.getElementById('external-vt-grid')?.classList.toggle('active-nav',mode==='grid');
+}
+function setViewMode(mode){
+  S.viewMode=mode;
+  localStorage.setItem('mpd_view',mode);
+  _syncViewModeButtons();
   if(S.activeSection==='cloud') renderCloudFileList();
   else if(S.activeSection==='external') renderExternalFileList();
   else renderFiles();
@@ -3586,10 +3593,14 @@ function showSection(section){
     _externalSelIds.clear();
     renderExternalSelBar();
   }
-  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active-nav'));
+  document.querySelectorAll('.nav-btn:not(.vt-btn)').forEach(b=>b.classList.remove('active-nav'));
   const btn=document.getElementById('nav-'+section)||document.getElementById('cat-'+section);
   if(btn)btn.classList.add('active-nav');
   S.activeSection=section;
+  _syncViewModeButtons();
+  if(typeof syncDriveSortToolbar==='function')syncDriveSortToolbar();
+  if(typeof syncCloudSortToolbar==='function')syncCloudSortToolbar();
+  if(typeof syncExternalSortToolbar==='function')syncExternalSortToolbar();
   if(section==='drive'){hdSearchShowAll();loadAll();}
   if(section==='dashboard'){loadDashboard();loadReferralCode();loadDashboardNew();}
   if(section==='licenses'){loadLicenses();}
@@ -8865,8 +8876,17 @@ function cloudFolderIdFromSel(id){ return Number(String(id).slice(13)); }
 function cloudSelectedFolderIds(){ return [..._cloudSelIds].filter(isCloudFolderSelId).map(cloudFolderIdFromSel).filter(Number.isFinite); }
 function cloudSelectedFileIds(){ return [..._cloudSelIds].filter(id=>!isCloudFolderSelId(id)); }
 function _cloudSortValue(){
+  return S.cloudSort||localStorage.getItem('mpd_cloud_sort')||'date-desc';
+}
+function syncCloudSortToolbar(){
+  const sort=_cloudSortValue();
   const sel=document.getElementById('cloud-sort-sel');
-  return sel ? sel.value : 'name-asc';
+  if(sel)sel.value=sort;
+  document.querySelectorAll('#cloud-sort-menu .tb-sort-item').forEach(btn=>btn.classList.remove('active'));
+  const activeId={ 'name-asc':'cloud-sort-name','name-desc':'cloud-sort-name-desc','date-desc':'cloud-sort-date','date-asc':'cloud-sort-date-asc','size-desc':'cloud-sort-size-desc','size-asc':'cloud-sort-size-asc' }[sort];
+  if(activeId)document.getElementById(activeId)?.classList.add('active');
+  const lbl=document.getElementById('cloud-tb-sort-label');
+  if(lbl)lbl.textContent=_sortStorageLabel(sort);
 }
 function _cloudVisibleFiles(){
   const files=[...(S.cloudFiles||[])];
@@ -8953,14 +8973,15 @@ function renderCloudFolders(){
     labelEl.className='gd-section-label';
     el.parentNode.insertBefore(labelEl,el);
   }
-  if(!(S.cloudFolders||[]).length){
+  const folders=_sortStorageFiles(S.cloudFolders||[],_cloudSortValue());
+  if(!folders.length){
     el.innerHTML='';
     labelEl.style.display='none';
     return;
   }
   labelEl.style.display='';
   labelEl.innerHTML='<span>Folders</span>';
-  el.innerHTML=(S.cloudFolders||[]).map(f=>{
+  el.innerHTML=folders.map(f=>{
     const sel=_cloudSelIds.has(cloudFolderSelId(f.id));
     return `<div class="fade-in flex items-center justify-between px-3 py-2 rounded-lg hover:bg-gray-100 group cursor-pointer border ${sel?'border-teal-300 bg-teal-50':'border-transparent hover:border-gray-200'}" data-click="cloudOpenFolderById(${f.id})">
       <div class="flex items-center gap-2 min-w-0">
@@ -9060,14 +9081,9 @@ function renderCloudBrowser(){
   renderCloudFileList();
 }
 function cloudTbSetSort(sort){
-  const sel=document.getElementById('cloud-sort-sel');
-  if(sel)sel.value=sort;
-  document.querySelectorAll('#cloud-sort-menu .tb-sort-item').forEach(btn=>btn.classList.remove('active'));
-  const activeId={ 'name-asc':'cloud-sort-name','name-desc':'cloud-sort-name-desc','date-desc':'cloud-sort-date','date-asc':'cloud-sort-date-asc','size-desc':'cloud-sort-size-desc','size-asc':'cloud-sort-size-asc' }[sort];
-  if(activeId)document.getElementById(activeId)?.classList.add('active');
-  const labelMap={'date-desc':'Date','date-asc':'Date','name-asc':'Name','name-desc':'Name','size-desc':'Size','size-asc':'Size'};
-  const lbl=document.getElementById('cloud-tb-sort-label');
-  if(lbl)lbl.textContent=labelMap[sort]||'Sort';
+  S.cloudSort=sort;
+  localStorage.setItem('mpd_cloud_sort',sort);
+  syncCloudSortToolbar();
   document.getElementById('cloud-sort-menu')?.classList.remove('open');
   renderCloudFileList();
 }
@@ -9197,8 +9213,17 @@ function externalTbToggleSort(e){
   document.getElementById('external-sort-menu')?.classList.toggle('open');
 }
 function _externalSortValue(){
+  return S.externalSort||localStorage.getItem('mpd_external_sort')||'date-desc';
+}
+function syncExternalSortToolbar(){
+  const sort=_externalSortValue();
   const sel=document.getElementById('external-sort-sel');
-  return sel ? sel.value : 'name-asc';
+  if(sel)sel.value=sort;
+  document.querySelectorAll('#external-sort-menu .tb-sort-item').forEach(btn=>btn.classList.remove('active'));
+  const activeId={ 'name-asc':'external-sort-name','name-desc':'external-sort-name-desc','date-desc':'external-sort-date','date-asc':'external-sort-date-asc','size-desc':'external-sort-size-desc','size-asc':'external-sort-size-asc' }[sort];
+  if(activeId)document.getElementById(activeId)?.classList.add('active');
+  const lbl=document.getElementById('external-tb-sort-label');
+  if(lbl)lbl.textContent=_sortStorageLabel(sort);
 }
 function _externalVisibleFiles(){
   const files=[...(S.externalFiles||[])];
@@ -9306,14 +9331,15 @@ function renderExternalFolders(){
     labelEl.className='gd-section-label';
     el.parentNode.insertBefore(labelEl,el);
   }
-  if(!(S.externalFolders||[]).length){
+  const folders=_sortStorageFiles(S.externalFolders||[],_externalSortValue());
+  if(!folders.length){
     el.innerHTML='';
     labelEl.style.display='none';
     return;
   }
   labelEl.style.display='';
   labelEl.innerHTML='<span>Folders</span>';
-  el.innerHTML=(S.externalFolders||[]).map(f=>{
+  el.innerHTML=folders.map(f=>{
     const sel=_externalSelIds.has(externalFolderSelId(f.id));
     return `<div class="fade-in flex items-center justify-between px-3 py-2 rounded-lg hover:bg-gray-100 group cursor-pointer border ${sel?'border-teal-300 bg-teal-50':'border-transparent hover:border-gray-200'}" data-click="externalOpenFolderById(${f.id})">
       <div class="flex items-center gap-2 min-w-0">
@@ -9413,14 +9439,9 @@ function renderExternalBrowser(){
   renderExternalFileList();
 }
 function externalTbSetSort(sort){
-  const sel=document.getElementById('external-sort-sel');
-  if(sel)sel.value=sort;
-  document.querySelectorAll('#external-sort-menu .tb-sort-item').forEach(btn=>btn.classList.remove('active'));
-  const activeId={ 'name-asc':'external-sort-name','name-desc':'external-sort-name-desc','date-desc':'external-sort-date','date-asc':'external-sort-date-asc','size-desc':'external-sort-size-desc','size-asc':'external-sort-size-asc' }[sort];
-  if(activeId)document.getElementById(activeId)?.classList.add('active');
-  const labelMap={'date-desc':'Date','date-asc':'Date','name-asc':'Name','name-desc':'Name','size-desc':'Size','size-asc':'Size'};
-  const lbl=document.getElementById('external-tb-sort-label');
-  if(lbl)lbl.textContent=labelMap[sort]||'Sort';
+  S.externalSort=sort;
+  localStorage.setItem('mpd_external_sort',sort);
+  syncExternalSortToolbar();
   document.getElementById('external-sort-menu')?.classList.remove('open');
   renderExternalFileList();
 }
@@ -11424,7 +11445,8 @@ function renderSelBar(){
 }
 function renderFolders(){
   const el=document.getElementById('folder-list');if(!el)return;
-  window._fm={};S.folders.forEach(f=>{window._fm[f.id]=f;});
+  const folders=_sortStorageFiles(S.folders||[],S._sort||'name-asc');
+  window._fm={};folders.forEach(f=>{window._fm[f.id]=f;});
   // â”€â”€ Section label (injected above folder-list on mobile) â”€â”€
   let labelEl=document.getElementById('gd-folders-label');
   if(!labelEl){
@@ -11433,7 +11455,7 @@ function renderFolders(){
     labelEl.className='gd-section-label';
     el.parentNode.insertBefore(labelEl,el);
   }
-  if(!S.folders.length){
+  if(!folders.length){
     el.innerHTML='';
     labelEl.style.display='none';
     // also hide divider
@@ -11453,7 +11475,7 @@ function renderFolders(){
   }
   divEl.classList.add('visible');
   // Render folder cards
-  el.innerHTML=S.folders.map(f=>{
+  el.innerHTML=folders.map(f=>{
     const deleting=S.deletingIds.has('f'+f.id);
     const sel=S.selectedIds.has(folderSelId(f.id));
     return`<div class="fade-in flex items-center justify-between px-3 py-2 rounded-lg hover:bg-gray-100 group cursor-pointer border ${sel?'border-teal-300 bg-teal-50':'border-transparent hover:border-gray-200'} ${deleting?'opacity-50':''}" data-click="${deleting?'':('openFolderById('+f.id+')')}">
@@ -11753,11 +11775,13 @@ function _storageSortSize(f){
 }
 function _compareStorageFiles(a,b,sort){
   const mode=sort==='name'?'name-asc':sort==='date'?'date-desc':(sort||'name-asc');
-  if(mode==='date-desc')return _storageSortDateMs(b)-_storageSortDateMs(a);
-  if(mode==='date-asc')return _storageSortDateMs(a)-_storageSortDateMs(b);
+  let result=0;
+  if(mode==='date-desc')result=_storageSortDateMs(b)-_storageSortDateMs(a);
+  if(mode==='date-asc')result=_storageSortDateMs(a)-_storageSortDateMs(b);
   if(mode==='name-desc')return _storageSortName(b).localeCompare(_storageSortName(a));
-  if(mode==='size-desc')return _storageSortSize(b)-_storageSortSize(a);
-  if(mode==='size-asc')return _storageSortSize(a)-_storageSortSize(b);
+  if(mode==='size-desc')result=_storageSortSize(b)-_storageSortSize(a);
+  if(mode==='size-asc')result=_storageSortSize(a)-_storageSortSize(b);
+  if(result)return result;
   return _storageSortName(a).localeCompare(_storageSortName(b));
 }
 function _sortStorageFiles(files,sort){
@@ -11765,6 +11789,15 @@ function _sortStorageFiles(files,sort){
 }
 function _sortStorageLabel(mode){
   return ({'name':'Name','name-asc':'Name','name-desc':'Name','date':'Date','date-desc':'Date','date-asc':'Date','size-desc':'Size','size-asc':'Size'})[mode]||'Name';
+}
+function syncDriveSortToolbar(){
+  const sort=S._sort||'name-asc';
+  const activeMode=sort==='name'?'name-asc':sort;
+  const lbl=document.getElementById('tb-sort-label');
+  if(lbl)lbl.textContent=_sortStorageLabel(sort);
+  document.querySelectorAll('#tb-sort-menu .tb-sort-item').forEach(el=>{
+    el.classList.toggle('active',el.id==='sort-'+activeMode);
+  });
 }
 function renderFiles(){
   const el=document.getElementById('file-list');if(!el)return;
@@ -15669,7 +15702,7 @@ function hdSearchSelect(btn){
   document.querySelectorAll('.app-section').forEach(el=>el.classList.add('hidden'));
   const _dsec=document.getElementById('section-drive');
   if(_dsec)_dsec.classList.remove('hidden');
-  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active-nav'));
+  document.querySelectorAll('.nav-btn:not(.vt-btn)').forEach(b=>b.classList.remove('active-nav'));
   const _dnav=document.getElementById('nav-drive');
   if(_dnav)_dnav.classList.add('active-nav');
   S.activeSection='drive';
@@ -15759,13 +15792,8 @@ function tbToggleSort(e){
 }
 function tbSetSort(mode){
   S._sort=mode;
-  const activeMode=mode==='name'?'name-asc':mode;
-  const lbl=document.getElementById('tb-sort-label');
-  if(lbl) lbl.textContent=_sortStorageLabel(mode);
-  // Highlight active item
-  document.querySelectorAll('#tb-sort-menu .tb-sort-item').forEach(el=>{
-    el.classList.toggle('active',el.id==='sort-'+activeMode);
-  });
+  localStorage.setItem('mpd_drive_sort',mode);
+  syncDriveSortToolbar();
   const m=document.getElementById('tb-sort-menu');
   if(m) m.classList.remove('open');
   // If a search filter is active, sort the full originals so new files aren't lost
@@ -15781,7 +15809,7 @@ function _getSortFn(mode){
   return(a,b)=>_compareStorageFiles(a,b,mode);
 }
 // initialise sort state
-if(!S._sort) S._sort='name-asc';
+if(!S._sort) S._sort=localStorage.getItem('mpd_drive_sort')||'name-asc';
 
 // Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
 // EDIT PROFILE
