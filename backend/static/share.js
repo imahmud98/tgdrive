@@ -16,6 +16,7 @@ const ShareCrypto={
 };
 
 const State={shareId:null,shareMeta:null,shareKey:null,rawShareKey:null,apiBase:'',searchQuery:'',viewMode:'grid'};
+const SharePreviewRuntime={objectUrl:null,mode:'idle',text:'',entry:null};
 const SHARE_ID_RE=/^[A-Za-z0-9_-]{32,64}$/;
 const SHARE_KEY_RE=/^(pw|[A-Za-z0-9_-]{16,256})$/;
 const DEFAULT_APP_BASE='https://mypocketdrive.online';
@@ -112,6 +113,14 @@ async function handlePasswordSubmit(){const pw=document.getElementById('share-pa
 
 function downloadIconSvg(){return '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 4v10m0 0 4-4m-4 4-4-4M5 20h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>'}
 function imageIconSvg(){return '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2.4" stroke="currentColor" stroke-width="1.8"/><path d="m6.7 16 3.6-3.6a1.2 1.2 0 0 1 1.7 0l2.1 2.1.9-.9a1.2 1.2 0 0 1 1.7 0L20 17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="8.7" cy="9" r="1.2" fill="currentColor"/></svg>'}
+function fileTypeIconSvg(name){
+  const ext=String(name||'').toLowerCase().split('.').pop();
+  if(['jpg','jpeg','png','gif','webp','bmp','avif','svg'].includes(ext))return imageIconSvg();
+  if(ext==='pdf')return '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 3.5h7l4 4V20.5H7z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M14 3.5V8h4" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M8.8 15.5h6.4M8.8 12.5h6.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+  if(['mp4','mov','webm','mkv','m4v'].includes(ext))return '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3.5" y="5.5" width="17" height="13" rx="2.4" stroke="currentColor" stroke-width="1.8"/><path d="m10 9 5 3-5 3z" fill="currentColor"/></svg>';
+  if(['mp3','wav','flac','m4a','aac','oga'].includes(ext))return '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 18.5a2.5 2.5 0 1 1-1.2-2.1V6.5l9-2v10.6a2.5 2.5 0 1 1-1.2-2.1V8l-7.8 1.7v6.7A2.5 2.5 0 0 1 9 18.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>';
+  return '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 3.5h7l4 4V20.5H7z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M14 3.5V8h4" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>';
+}
 function createDownloadButton(idx){const button=document.createElement('button');button.className='fr-act-btn share-row-download';button.type='button';button.title='Download';button.setAttribute('aria-label','Download');button.innerHTML=downloadIconSvg();button.addEventListener('click',e=>{e.stopPropagation();downloadSingle(idx)});return button}
 function bindPreviewOpen(row,idx){
  row.addEventListener('click',()=>openSharePreview(idx));
@@ -183,6 +192,7 @@ function renderFiles(){
 }
 
 function closeSharePreview(){
+ resetSharePreviewResources();
  const modal=document.getElementById('share-preview-modal');
  const stage=document.getElementById('share-preview-modal-stage');
  if(stage)stage.replaceChildren();
@@ -204,11 +214,17 @@ async function openSharePreview(idx){
  const modal=document.getElementById('share-preview-modal');
  const name=document.getElementById('share-preview-modal-name');
  const meta=document.getElementById('share-preview-modal-meta');
+ const icon=document.getElementById('share-preview-modal-icon');
  const download=document.getElementById('share-preview-modal-download');
+ const print=document.getElementById('share-preview-modal-print');
  if(!modal)return;
+ resetSharePreviewResources();
+ SharePreviewRuntime.entry=entry;
  if(name)name.textContent=entry.original_name||'File';
  if(meta)meta.textContent=`Viewer${entry.size?' - '+fmtSize(entry.size):''}`;
+ if(icon)icon.innerHTML=fileTypeIconSvg(entry.original_name||'');
  if(download){download.onclick=()=>downloadSingle(idx);}
+ if(print){print.onclick=printSharePreviewCurrent;}
  modal.classList.remove('hidden');
  document.body.classList.add('share-preview-open');
  setSharePreviewStatus(entry,'Preparing secure preview','The file decrypts locally in this browser.');
@@ -459,6 +475,37 @@ async function fetchSharedDownloadBlob(entry){
 function sharePreviewUnavailableHtml(entry){
   return '<div class="share-preview-unavailable"><div class="share-preview-icon">'+fileIcon(entry.original_name||'')+'</div><div class="share-preview-status"><h2>Preview unavailable</h2><p>Please download to view this file.</p></div></div>';
 }
+function resetSharePreviewResources(){
+  if(SharePreviewRuntime.objectUrl){
+    try{URL.revokeObjectURL(SharePreviewRuntime.objectUrl)}catch(_e){}
+  }
+  Object.assign(SharePreviewRuntime,{objectUrl:null,mode:'idle',text:'',entry:null});
+}
+function printSharePreviewCurrent(){
+  const entry=SharePreviewRuntime.entry;
+  if(!entry){
+    toast('Nothing printable is ready yet.','error');
+    return;
+  }
+  if(!['image','pdf','text'].includes(SharePreviewRuntime.mode)){
+    toast('Print is available after the preview loads.','error');
+    return;
+  }
+  const name=esc(entry.original_name||'Preview');
+  const url=SharePreviewRuntime.objectUrl;
+  const printWin=window.open('','_blank','width=960,height=720');
+  if(!printWin){
+    toast('Allow popups to print this preview.','error');
+    return;
+  }
+  const body=SharePreviewRuntime.mode==='image'
+    ? `<img src="${url}" alt="${name}" style="max-width:100%;max-height:100vh;object-fit:contain;display:block;margin:auto;">`
+    : SharePreviewRuntime.mode==='pdf'
+      ? `<iframe src="${url}" title="${name}" style="width:100%;height:100vh;border:0;"></iframe>`
+      : `<pre style="white-space:pre-wrap;word-break:break-word;font:13px/1.55 Consolas,monospace;margin:0;">${esc(SharePreviewRuntime.text||'')}</pre>`;
+  printWin.document.write(`<!doctype html><html><head><title>${name}</title><style>html,body{margin:0;min-height:100%;background:#fff;color:#111827;}body{display:flex;align-items:center;justify-content:center;padding:${SharePreviewRuntime.mode==='text'?'24px':'0'};box-sizing:border-box;}@media print{body{padding:0;}}</style></head><body>${body}<script>window.onload=function(){setTimeout(function(){window.focus();window.print();},250);};<\/script></body></html>`);
+  printWin.document.close();
+}
 async function decryptEntryToBlob(entry){
   if(isDirectCloudSharedEntry(entry))return await decryptSharedDirectCloudEntryToBlob(entry);
   const filename=entry.original_name||'shared-file';
@@ -487,9 +534,20 @@ function _applyShareImageZoom(){
   z.img.style.cursor=z.scale>1?(z.dragging?'grabbing':'grab'):'zoom-in';
   if(z.label)z.label.textContent=Math.round(z.scale*100)+'%';
 }
-function _setShareImageZoom(scale){
+function _setShareImageZoom(scale,anchorClientX,anchorClientY){
   const z=ShareImageZoom;
+  const old=z.scale||1;
   const next=_clampShareZoom(scale);
+  if(z.stage&&old>0&&next!==old){
+    const rect=z.stage.getBoundingClientRect();
+    const ax=Number.isFinite(anchorClientX)?anchorClientX:rect.left+rect.width/2;
+    const ay=Number.isFinite(anchorClientY)?anchorClientY:rect.top+rect.height/2;
+    const localX=ax-(rect.left+rect.width/2);
+    const localY=ay-(rect.top+rect.height/2);
+    const ratio=next/old;
+    z.x=localX-(localX-z.x)*ratio;
+    z.y=localY-(localY-z.y)*ratio;
+  }
   if(next<=1){z.x=0;z.y=0;}
   z.scale=next;
   _applyShareImageZoom();
@@ -514,11 +572,11 @@ function setupShareImageZoom(stage,img){
   zoomOut.addEventListener('click',()=>_setShareImageZoom(ShareImageZoom.scale-ShareImageZoom.step));
   zoomIn.addEventListener('click',()=>_setShareImageZoom(ShareImageZoom.scale+ShareImageZoom.step));
   fit.addEventListener('click',()=>_setShareImageZoom(1));
-  img.addEventListener('dblclick',()=>_setShareImageZoom(ShareImageZoom.scale>1?1:2));
+  img.addEventListener('dblclick',(event)=>_setShareImageZoom(ShareImageZoom.scale>1?1:2,event.clientX,event.clientY));
   stage.addEventListener('wheel',(event)=>{
     event.preventDefault();
     const delta=event.deltaY<0?ShareImageZoom.step:-ShareImageZoom.step;
-    _setShareImageZoom(ShareImageZoom.scale+delta);
+    _setShareImageZoom(ShareImageZoom.scale+delta,event.clientX,event.clientY);
   },{passive:false});
   img.addEventListener('pointerdown',(event)=>{
     if(ShareImageZoom.scale<=1)return;
@@ -544,19 +602,24 @@ async function loadSharePreviewIntoStage(idx,stageId){
   const entry=State.shareMeta?.wrapped_keys?.[idx];
   const stage=document.getElementById(stageId);
   if(!entry||!stage)return;
+  stage.classList.remove('is-image');
   const mime=getEntryMime(entry);
   const previewable=mime.startsWith('image/')||mime.startsWith('video/')||mime.startsWith('audio/')||mime==='application/pdf'||mime.startsWith('text/');
   if(!previewable){stage.innerHTML=sharePreviewUnavailableHtml(entry);return;}
   try{
     const blob=String(entry.storage_type||'cloud').toLowerCase()==='nas'?await fetchSharedNasPreviewBlob(entry):await decryptEntryToBlob(entry);
+    if(SharePreviewRuntime.objectUrl){
+      try{URL.revokeObjectURL(SharePreviewRuntime.objectUrl)}catch(_e){}
+    }
     const url=URL.createObjectURL(blob);
+    Object.assign(SharePreviewRuntime,{objectUrl:url,mode:'file',text:'',entry});
     stage.replaceChildren();
     let el;
-    if(mime.startsWith('image/')){el=document.createElement('img');el.alt=entry.original_name||'Shared image';el.src=url;setupShareImageZoom(stage,el);return;}
-    else if(mime.startsWith('video/')){el=document.createElement('video');el.controls=true;el.playsInline=true;}
-    else if(mime.startsWith('audio/')){el=document.createElement('audio');el.controls=true;}
-    else if(mime==='application/pdf'){el=document.createElement('iframe');el.title=entry.original_name||'Shared PDF';}
-    else{el=document.createElement('pre');el.className='share-text-preview';el.textContent=await blob.text();stage.appendChild(el);setTimeout(()=>URL.revokeObjectURL(url),60000);return;}
+    if(mime.startsWith('image/')){SharePreviewRuntime.mode='image';el=document.createElement('img');el.alt=entry.original_name||'Shared image';el.src=url;setupShareImageZoom(stage,el);return;}
+    else if(mime.startsWith('video/')){SharePreviewRuntime.mode='media';el=document.createElement('video');el.controls=true;el.playsInline=true;}
+    else if(mime.startsWith('audio/')){SharePreviewRuntime.mode='media';el=document.createElement('audio');el.controls=true;}
+    else if(mime==='application/pdf'){SharePreviewRuntime.mode='pdf';el=document.createElement('iframe');el.title=entry.original_name||'Shared PDF';}
+    else{SharePreviewRuntime.mode='text';SharePreviewRuntime.text=await blob.text();el=document.createElement('pre');el.className='share-text-preview';el.textContent=SharePreviewRuntime.text;stage.appendChild(el);return;}
     el.src=url;stage.appendChild(el);
   }catch(e){
     stage.innerHTML=sharePreviewUnavailableHtml(entry);
@@ -655,7 +718,7 @@ async function decryptAndSave(entries){
   progressBar.style.width='100%';
   setTimeout(()=>progressPanel.style.display='none',2600);
 }
-function bindUi(){document.getElementById('pw-btn')?.addEventListener('click',handlePasswordSubmit);document.getElementById('download-all-btn')?.addEventListener('click',downloadAll);document.getElementById('share-password')?.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();handlePasswordSubmit()}});document.getElementById('share-preview-modal-close')?.addEventListener('click',closeSharePreview);document.getElementById('share-preview-modal')?.addEventListener('click',e=>{if(e.target?.id==='share-preview-modal')closeSharePreview()});document.addEventListener('keydown',e=>{if(e.key==='Escape')closeSharePreview()})}
+function bindUi(){document.getElementById('pw-btn')?.addEventListener('click',handlePasswordSubmit);document.getElementById('download-all-btn')?.addEventListener('click',downloadAll);document.getElementById('share-password')?.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();handlePasswordSubmit()}});document.getElementById('share-preview-modal-close')?.addEventListener('click',closeSharePreview);document.getElementById('share-preview-modal-print')?.addEventListener('click',printSharePreviewCurrent);document.getElementById('share-preview-modal')?.addEventListener('click',e=>{if(e.target?.id==='share-preview-modal')closeSharePreview()});document.addEventListener('keydown',e=>{if(e.key==='Escape')closeSharePreview()})}
 if(document.readyState==='loading'){document.addEventListener('DOMContentLoaded',()=>{bindUi();init()})}else{bindUi();init()}
 
 
