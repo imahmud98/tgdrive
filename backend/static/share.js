@@ -121,6 +121,13 @@ function fileTypeIconSvg(name){
   if(['mp3','wav','flac','m4a','aac','oga'].includes(ext))return '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M9 18.5a2.5 2.5 0 1 1-1.2-2.1V6.5l9-2v10.6a2.5 2.5 0 1 1-1.2-2.1V8l-7.8 1.7v6.7A2.5 2.5 0 0 1 9 18.5Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>';
   return '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7 3.5h7l4 4V20.5H7z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M14 3.5V8h4" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>';
 }
+function sharePreviewMetaLine(entry){
+  const bits=[];
+  if(entry?.size)bits.push(fmtSize(entry.size));
+  const mime=getEntryMime(entry);
+  if(mime&&mime!=='application/octet-stream')bits.push(mime);
+  return bits.join(' - ');
+}
 function createDownloadButton(idx){const button=document.createElement('button');button.className='fr-act-btn share-row-download';button.type='button';button.title='Download';button.setAttribute('aria-label','Download');button.innerHTML=downloadIconSvg();button.addEventListener('click',e=>{e.stopPropagation();downloadSingle(idx)});return button}
 function bindPreviewOpen(row,idx){
  row.addEventListener('click',()=>openSharePreview(idx));
@@ -221,7 +228,7 @@ async function openSharePreview(idx){
  resetSharePreviewResources();
  SharePreviewRuntime.entry=entry;
  if(name)name.textContent=entry.original_name||'File';
- if(meta)meta.textContent=`Viewer${entry.size?' - '+fmtSize(entry.size):''}`;
+ if(meta)meta.textContent=sharePreviewMetaLine(entry);
  if(icon)icon.innerHTML=fileTypeIconSvg(entry.original_name||'');
  if(download){download.onclick=()=>downloadSingle(idx);}
  if(print){print.onclick=printSharePreviewCurrent;}
