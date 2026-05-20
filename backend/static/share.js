@@ -15,7 +15,7 @@ const ShareCrypto={
  async decryptBlob(encryptedBlob,fileKeyRaw){const buf=new Uint8Array(encryptedBlob);if(buf.length<28)throw new Error('Encrypted blob is corrupted');const iv=buf.slice(16,28);const ct=buf.slice(28);const cryptoKey=await crypto.subtle.importKey('raw',fileKeyRaw,{name:'AES-GCM',length:256},false,['decrypt']);return crypto.subtle.decrypt({name:'AES-GCM',iv},cryptoKey,ct)}
 };
 
-const State={shareId:null,shareMeta:null,shareKey:null,rawShareKey:null,apiBase:'',searchQuery:'',viewMode:'grid'};
+const State={shareId:null,shareMeta:null,shareKey:null,rawShareKey:null,apiBase:'',searchQuery:'',viewMode:'grid',selectedIds:new Set()};
 const SharePreviewRuntime={objectUrl:null,mode:'idle',text:'',entry:null};
 const SHARE_ID_RE=/^[A-Za-z0-9_-]{32,64}$/;
 const SHARE_KEY_RE=/^(pw|[A-Za-z0-9_-]{16,256})$/;
@@ -129,11 +129,28 @@ function sharePreviewMetaLine(entry){
   return bits.join(' - ');
 }
 function createDownloadButton(idx){const button=document.createElement('button');button.className='fr-act-btn share-row-download';button.type='button';button.title='Download';button.setAttribute('aria-label','Download');button.innerHTML=downloadIconSvg();button.addEventListener('click',e=>{e.stopPropagation();downloadSingle(idx)});return button}
+function shareEntryId(entry,idx){return String(entry.file_id||entry.id||entry.original_name||idx)}
+function shareOwnerName(){return State.shareMeta?.owner_name||State.shareMeta?.owner_username||State.shareMeta?.shared_by||'Pockio user'}
+function selectedShareEntries(){
+ const entries=State.shareMeta?.wrapped_keys||[];
+ if(!State.selectedIds?.size)return entries;
+ return entries.filter((entry,idx)=>State.selectedIds.has(shareEntryId(entry,idx)));
+}
+function toggleSharedEntrySelection(entry,idx,checked){
+ const id=shareEntryId(entry,idx);
+ if(checked)State.selectedIds.add(id);else State.selectedIds.delete(id);
+ renderFiles();
+}
+function selectAllSharedEntries(entries,checked){
+ if(checked)entries.forEach(({entry,idx})=>State.selectedIds.add(shareEntryId(entry,idx)));
+ else entries.forEach(({entry,idx})=>State.selectedIds.delete(shareEntryId(entry,idx)));
+ renderFiles();
+}
 function bindPreviewOpen(row,idx){
- row.addEventListener('click',()=>openSharePreview(idx));
+ row.addEventListener('dblclick',()=>openSharePreview(idx));
  row.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();openSharePreview(idx)}});
- row.setAttribute('role','button');
- row.setAttribute('aria-label','Preview shared file');
+  row.setAttribute('role','button');
+  row.setAttribute('aria-label','Preview shared file');
 }
 function renderFiles(){
   const meta=State.shareMeta;
@@ -156,6 +173,7 @@ function renderFiles(){
     label.innerHTML=single?'':`<span>Files</span><span class="count">${entries.length||meta.file_count} file${(entries.length||meta.file_count)!==1?'s':''}</span>`;
   }
   if(single){
+    State.selectedIds.clear();
     renderSinglePreview(entries[0],list);
     showPanel('files');
     setTimeout(()=>loadSinglePreview(0),30);
@@ -171,29 +189,54 @@ function renderFiles(){
     showPanel('files');
     return;
   }
+  const owner=shareOwnerName();
+  const allVisibleSelected=visibleEntries.length>0&&visibleEntries.every(({entry,idx})=>State.selectedIds.has(shareEntryId(entry,idx)));
   visibleEntries.forEach(({entry,idx})=>{
-    const row=document.createElement('div');row.className='file-row fade-in';
+    const id=shareEntryId(entry,idx);
+    const selected=State.selectedIds.has(id);
+    const row=document.createElement('div');row.className='file-row fade-in'+(selected?' selected':'');
     row.tabIndex=0;
     bindPreviewOpen(row,idx);
     if(State.viewMode==='grid'){
       const thumb=document.createElement('div');thumb.className='fr-thumb-wrap';
       const placeholder=document.createElement('span');placeholder.className='thumb-placeholder';placeholder.innerHTML=imageIconSvg();
       thumb.appendChild(placeholder);
+      const cbWrap=document.createElement('div');cbWrap.className='share-grid-select-wrap';
+      const cb=document.createElement('input');cb.type='checkbox';cb.className='share-select-cb grid-file-cb';cb.checked=selected;cb.setAttribute('aria-label',`Select ${entry.original_name||'File'}`);
+      cb.addEventListener('click',e=>e.stopPropagation());
+      cb.addEventListener('change',e=>toggleSharedEntrySelection(entry,idx,e.target.checked));
+      cbWrap.appendChild(cb);
+      thumb.appendChild(cbWrap);
       const info=document.createElement('div');info.className='fr-info';
       const name=document.createElement('div');name.className='fr-name';name.textContent=entry.original_name||'File';
-      const metaLine=document.createElement('div');metaLine.className='fr-size';metaLine.textContent=`${entry.size?fmtSize(entry.size):''}${entry.size?' - ':''}shared`;
+      const metaLine=document.createElement('div');metaLine.className='fr-size';metaLine.textContent=`${entry.size?fmtSize(entry.size):''}${entry.size?' - ':''}shared by ${owner}`;
       info.appendChild(name);info.appendChild(metaLine);
-      const btnWrap=document.createElement('div');btnWrap.className='fr-acts';btnWrap.id=`file-btn-${idx}`;btnWrap.appendChild(createDownloadButton(idx));
-      row.appendChild(thumb);row.appendChild(info);row.appendChild(btnWrap);list.appendChild(row);
+      row.appendChild(thumb);row.appendChild(info);list.appendChild(row);
       return;
     }
+    if(!list.querySelector('.share-list-header')){
+      const header=document.createElement('div');header.className='share-list-header';
+      const allCb=document.createElement('input');allCb.type='checkbox';allCb.checked=allVisibleSelected;allCb.title='Select all';allCb.setAttribute('aria-label','Select all shared files');allCb.addEventListener('change',e=>selectAllSharedEntries(visibleEntries,e.target.checked));
+      const hName=document.createElement('span');hName.textContent='Name';
+      const hDate=document.createElement('span');hDate.textContent='Date';
+      const hSize=document.createElement('span');hSize.textContent='Size';
+      const hPad=document.createElement('span');
+      header.appendChild(allCb);header.appendChild(hName);header.appendChild(hDate);header.appendChild(hSize);header.appendChild(hPad);
+      list.appendChild(header);
+    }
     const icon=document.createElement('span');icon.className='thumb-placeholder';icon.innerHTML=imageIconSvg();
+    const cb=document.createElement('input');cb.type='checkbox';cb.className='share-select-cb';cb.checked=selected;cb.setAttribute('aria-label',`Select ${entry.original_name||'File'}`);
+    cb.addEventListener('click',e=>e.stopPropagation());
+    cb.addEventListener('change',e=>toggleSharedEntrySelection(entry,idx,e.target.checked));
+    const info=document.createElement('div');info.className='fr-info';
     const name=document.createElement('div');name.className='fr-name';name.textContent=entry.original_name||'File';
+    const metaLine=document.createElement('div');metaLine.className='fr-meta';metaLine.textContent=`Shared by ${owner}`;
+    info.appendChild(name);info.appendChild(metaLine);
     const date=document.createElement('div');date.className='file-date';date.textContent=fmtDate(entry.created_at||entry.updated_at||meta.created_at||'').replace(/,.*$/,'');
     date.className='fr-date';
     const size=document.createElement('div');size.className='fr-size';size.textContent=entry.size?fmtSize(entry.size):'';
-    const btnWrap=document.createElement('div');btnWrap.className='fr-acts';btnWrap.id=`file-btn-${idx}`;btnWrap.appendChild(createDownloadButton(idx));
-    row.appendChild(icon);row.appendChild(name);row.appendChild(date);row.appendChild(size);row.appendChild(btnWrap);list.appendChild(row);
+    const pad=document.createElement('span');pad.className='fr-pad';
+    row.appendChild(cb);row.appendChild(icon);row.appendChild(info);row.appendChild(date);row.appendChild(size);row.appendChild(pad);list.appendChild(row);
   });
   showPanel('files');
 }
@@ -673,7 +716,7 @@ async function downloadSingle(idx){
   try{await decryptAndSave([entry])}catch(e){toast('Download failed: '+e.message,'error')}finally{if(btnEl)btnEl.replaceChildren(createDownloadButton(idx))}
 }
 async function downloadAll(){
-  const entries=State.shareMeta?.wrapped_keys||[];
+  const entries=selectedShareEntries();
   const nativeEntries=entries.filter(canUseNativeSharedDownload);
   const browserEntries=entries.filter((entry)=>!canUseNativeSharedDownload(entry));
   if(nativeEntries.length){
