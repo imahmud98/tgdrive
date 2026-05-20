@@ -11495,10 +11495,7 @@ function renderFolders(){
 }
 
 function _sharedItemUrl(item){
-  const base = (location.hostname === 'mypocketdrive.online' || location.hostname === 'www.mypocketdrive.online') ? location.origin : String(API||'').replace(/\/api$/,'');
-  let key = '';
-  try{ key = (JSON.parse(localStorage.getItem('mpd_shared_link_keys')||'{}')||{})[item.share_id] || ''; }catch(_){ key=''; }
-  return `${base}/share/${item.share_id}${key ? `?k=${key}#${key}` : ''}`;
+  return `https://mypocketdrive.online/file/d/${encodeURIComponent(item.share_id)}/view?usp=sharing`;
 }
 const _sharedThumbCache = new Map();
 const SHARED_THUMB_MAX_BYTES = 12 * 1024 * 1024;
@@ -12905,6 +12902,9 @@ async function generateShareLink() {
   try {
     const isPasswordProtected = document.getElementById('share-password-toggle')?.checked;
     const sharePassword = isPasswordProtected ? document.getElementById('share-password-input')?.value?.trim() : null;
+    if (!isPasswordProtected) {
+      throw new Error('Turn on Password protection to create a safe share link without putting encryption keys in the URL.');
+    }
     if (isPasswordProtected && (!sharePassword || sharePassword.length < 4)) {
       throw new Error('Password must be at least 4 characters');
     }
@@ -12979,27 +12979,10 @@ async function generateShareLink() {
       access_mode, public_requires_auth, role_default, recipients
     });
 
-    // 5. Build the full share URL with ShareKey in the fragment (#).
-    //    API calls may use the same-origin /api proxy, but human share links
-    //    must open the backend share page itself, not /api/share inside the app.
-    let shareUrl;
-    const shareBase = (() => {
-      const apiBase = String(API || '').replace(/\/$/, '');
-      if (/^https?:\/\//i.test(apiBase)) return apiBase.replace(/\/api$/i, '');
-      if (location.hostname === 'mypocketdrive.online' || location.hostname === 'www.mypocketdrive.online') {
-        return 'https://api.mypocketdrive.online';
-      }
-      return location.origin;
-    })();
-    if (isPasswordProtected) {
-      // Password mode: ?k=pw in query string (WhatsApp safe) + #pw fragment
-      shareUrl = `${shareBase}/share/${resp.share_id}?k=pw#pw`;
-    } else {
-      const fragment = ShareKeyMgr.toFragment(shareKeyRaw);
-      // Key in BOTH query param (WhatsApp-safe) and fragment (security best practice)
-      // The fragment is preferred; query param is fallback if fragment stripped
-      shareUrl = `${shareBase}/share/${resp.share_id}?k=${fragment}#${fragment}`;
-    }    ShareState.generatedLink = shareUrl;
+    // 5. Build a short public URL without query/hash secrets. The password is the
+    //    only way to derive the share key, so copied links do not leak E2EE keys.
+    const shareUrl = `https://mypocketdrive.online/file/d/${encodeURIComponent(resp.share_id)}/view?usp=sharing`;
+    ShareState.generatedLink = shareUrl;
 
     // Show the generated link
     const linkWrap = document.getElementById('share-link-wrap');
@@ -15447,7 +15430,7 @@ document.addEventListener('DOMContentLoaded', function(){
           <input id="share-link-input" type="text" readonly data-click="this.select()" class="f-input flex-1 text-xs font-mono"/>
           <button data-click="copyShareLink()" class="btn-primary flex-shrink-0">Copy link</button>
         </div>
-        <p class="text-xs" style="color:var(--mute)">The encryption key stays in the link. Keep it with trusted recipients.</p>
+        <p class="text-xs" style="color:var(--mute)">This link does not include encryption keys. Recipients unlock it with the password.</p>
       </div>
 
       <div class="share-footer-actions">

@@ -4,7 +4,7 @@
 <meta charset="UTF-8"/>
 <title>Redirecting…</title>
 <script>
-// GitHub Pages 404 redirect — catches /share/{id}?k=key and forwards to backend.
+// GitHub Pages 404 redirect - catches public share paths and forwards to backend.
 // api.txt contains the live backend URL (updated by start.bat every launch).
 (async function() {
   // 1. Load backend URL from api.txt
@@ -23,11 +23,11 @@
     return;
   }
 
-  // 2. Build the target URL: backend + same path + same query + same fragment
-  //    e.g. /share/abc123?k=KEY → https://ngrok-url/share/abc123?k=KEY#KEY
+  // 2. Build the target URL: backend + same path + same query + same fragment.
+  //    New links use /file/d/{id}/view?usp=sharing and do not carry secrets.
   const path     = window.location.pathname;
-  const search   = window.location.search;    // ?k=KEY — survives WhatsApp/redirects
-  const fragment = window.location.hash;      // #KEY — may be stripped by some apps
+  const search   = window.location.search;
+  const fragment = window.location.hash;
   const target   = backend + path + search + fragment;
 
   // 3. Redirect immediately

@@ -83,15 +83,14 @@ async function init(){
  wireShareSearch();
  wireShareViewToggle();
  const FLY_BACKEND='https://mypocketdrive-backend.fly.dev';
- const isStatic=location.hostname.endsWith('github.io')||location.hostname==='mypocketdrive.online';
+ const isStatic=location.hostname.endsWith('github.io')||location.hostname==='mypocketdrive.online'||location.hostname==='www.mypocketdrive.online';
  if(isStatic){try{const r=await fetch('/api.txt',{cache:'no-store'});if(r.ok){const t=(await r.text()).trim();if(t.startsWith('http'))State.apiBase=t.replace(/\/$/,'')}}catch(e){} if(!State.apiBase)State.apiBase=FLY_BACKEND}else{State.apiBase=location.origin}
  try{document.cookie='ngrok-skip-browser-warning=true; path=/; SameSite=Strict'}catch(e){}
- const pathMatch=location.pathname.match(/\/share\/([A-Za-z0-9_\-]{32,64})/);if(!pathMatch){showError('Invalid link','This URL does not contain a valid share ID.');return}State.shareId=pathMatch[1];
+ const pathMatch=location.pathname.match(/\/share\/([A-Za-z0-9_\-]{32,64})/)||location.pathname.match(/\/file\/d\/([A-Za-z0-9_\-]{32,64})(?:\/view)?/);if(!pathMatch){showError('Invalid link','This URL does not contain a valid share ID.');return}State.shareId=pathMatch[1];
  let fragment=location.hash.replace('#','');if(!fragment){const qp=new URLSearchParams(location.search).get('k');if(qp)fragment=qp}if(fragment){try{const m=JSON.parse(localStorage.getItem('mpd_shared_link_keys')||'{}')||{};m[State.shareId]=fragment;localStorage.setItem('mpd_shared_link_keys',JSON.stringify(m));}catch(_){}}
  wireShareAuthLinks(fragment||'');
  if(getStoredAccessToken()&&fragment){window.location.replace(appShareHref('shared',fragment));return}
- if(!fragment){showError('Incomplete link','The encryption key is missing from this link. Make sure you copied the complete URL.');return}
- if(fragment!=='pw'){try{const rawKeyBuf=b64urlDecode(fragment);if(rawKeyBuf.byteLength!==32)throw new Error('Wrong key length');State.rawShareKey=rawKeyBuf;State.shareKey=await ShareCrypto.importShareKey(rawKeyBuf)}catch(e){showError('Invalid key','The encryption key in this URL is malformed.');return}}
+ if(fragment&&fragment!=='pw'){try{const rawKeyBuf=b64urlDecode(fragment);if(rawKeyBuf.byteLength!==32)throw new Error('Wrong key length');State.rawShareKey=rawKeyBuf;State.shareKey=await ShareCrypto.importShareKey(rawKeyBuf)}catch(e){showError('Invalid key','The encryption key in this URL is malformed.');return}}
  await loadShareMeta();
 }
 
@@ -105,6 +104,7 @@ async function loadShareMeta(){
   State.shareMeta=await res.json();
   wireShareAuthLinks((new URLSearchParams(location.search).get('k')||location.hash.replace('#','')||'').trim());
   if(State.shareMeta.is_password_protected&&!State.shareKey){showPanel('password');return}
+  if(!State.shareKey){showError('Password required','This protected link does not include encryption keys. Ask the owner for the password, or request a new password-protected link.');return}
   renderFiles();
  }catch(e){showError('Network error','Could not reach server: '+e.message)}
 }
