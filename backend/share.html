@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@700;800&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="/static/app-shell.css?v=20260521staticshare1">
-<link rel="stylesheet" href="/static/share.css?v=20260521sharepass1">
+<link rel="stylesheet" href="/static/share.css?v=20260522sharepass2">
 <style>
 html,body{margin:0;height:100%;overflow:hidden}
 .hidden{display:none!important}
@@ -85,19 +85,19 @@ html,body{margin:0;height:100%;overflow:hidden}
       </section>
 
       <section id="panel-password" class="share-state password-card hidden" aria-modal="true" role="dialog" aria-labelledby="password-title">
-        <div class="password-modal-card">
-          <div class="password-modal-head">
-            <h1 id="password-title">Unlock encrypted files</h1>
-            <span class="password-modal-lock" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M7 11V8a5 5 0 0 1 10 0v3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M6 11h12v10H6V11Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg></span>
+        <div class="modal-box password-modal-card" style="max-width:380px">
+          <div class="modal-hd password-modal-head">
+            <span id="password-title" class="modal-title">Unlock encrypted files</span>
+            <a class="modal-close password-modal-close" href="https://mypocketdrive.online/" aria-label="Close" title="Close"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></a>
           </div>
           <div class="password-modal-body">
             <p>Enter the share password to unlock these encrypted files.</p>
-            <label for="share-password">Share password</label>
-            <input id="share-password" type="password" placeholder=""/>
+            <label class="f-label" for="share-password">Share password</label>
+            <input id="share-password" type="password" autocomplete="current-password" class="f-input" placeholder=""/>
             <div id="pw-err" class="err hidden"></div>
           </div>
           <div class="password-modal-actions">
-            <button class="btn" id="pw-btn">Unlock</button>
+            <button class="btn-primary" id="pw-btn" type="button">Unlock</button>
           </div>
         </div>
       </section>
@@ -161,6 +161,6 @@ html,body{margin:0;height:100%;overflow:hidden}
   </div>
 </div>
 <div id="toast"></div>
-<script src="/static/share.js?v=20260521sharepass1" defer></script>
+<script src="/static/share.js?v=20260522sharepass2" defer></script>
 </body>
 </html>
