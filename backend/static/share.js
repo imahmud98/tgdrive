@@ -86,7 +86,11 @@ async function init(){
  const isStatic=location.hostname.endsWith('github.io')||location.hostname==='mypocketdrive.online'||location.hostname==='www.mypocketdrive.online';
  if(isStatic){try{const r=await fetch('/api.txt',{cache:'no-store'});if(r.ok){const t=(await r.text()).trim();if(t.startsWith('http'))State.apiBase=t.replace(/\/$/,'')}}catch(e){} if(!State.apiBase)State.apiBase=FLY_BACKEND}else{State.apiBase=location.origin}
  try{document.cookie='ngrok-skip-browser-warning=true; path=/; SameSite=Strict'}catch(e){}
- const pathMatch=location.pathname.match(/\/share\/([A-Za-z0-9_\-]{32,64})/)||location.pathname.match(/\/file\/d\/([A-Za-z0-9_\-]{32,64})(?:\/view)?/);if(!pathMatch){showError('Invalid link','This URL does not contain a valid share ID.');return}State.shareId=pathMatch[1];
+ const pathMatch=location.pathname.match(/\/share\/([A-Za-z0-9_\-]{32,64})/)||location.pathname.match(/\/file\/d\/([A-Za-z0-9_\-]{32,64})(?:\/view)?/);
+ const queryShare=new URLSearchParams(location.search).get('share')||new URLSearchParams(location.search).get('share_id');
+ const injectedShare=window.__MPD_SHARE_ID__;
+ State.shareId=(pathMatch&&pathMatch[1])||queryShare||injectedShare||'';
+ if(!SHARE_ID_RE.test(State.shareId)){showError('Invalid link','This URL does not contain a valid share ID.');return}
  let fragment=location.hash.replace('#','');if(!fragment){const qp=new URLSearchParams(location.search).get('k');if(qp)fragment=qp}if(fragment){try{const m=JSON.parse(localStorage.getItem('mpd_shared_link_keys')||'{}')||{};m[State.shareId]=fragment;localStorage.setItem('mpd_shared_link_keys',JSON.stringify(m));}catch(_){}}
  wireShareAuthLinks(fragment||'');
  if(getStoredAccessToken()&&fragment){window.location.replace(appShareHref('shared',fragment));return}

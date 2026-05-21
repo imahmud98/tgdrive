@@ -12,7 +12,7 @@
 .public-share-page .text-center{text-align:center;}
 .public-share-page .space-y-0\.5>*+*{margin-top:2px;}
 .public-share-page .hd-logo{cursor:default;}
-.public-share-page .hd-logo-img{content:url('/static/pockio_exact_no_change.svg');}
+.public-share-page .hd-logo-img{content:url('logo_true_vector_backgroundless.svg');}
 .public-share-page .hd-search-wrap input{pointer-events:auto;}
 .public-share-page .hd-search-clear,.public-share-page .hd-search-suggestions{display:none!important;}
 .public-signin-btn{height:42px;display:inline-flex;align-items:center;gap:10px;padding:0 18px 0 12px;border:1px solid rgba(20,184,166,.22);border-radius:999px;background:linear-gradient(180deg,#ffffff,#f5fffc);color:#063f42;text-decoration:none;font-family:'Plus Jakarta Sans','Poppins',sans-serif;font-size:13px;font-weight:800;box-shadow:0 12px 28px rgba(13,109,110,.09);transition:background .16s,color .16s,transform .16s,box-shadow .16s,border-color .16s;}

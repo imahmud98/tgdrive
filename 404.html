@@ -1,45 +1,64 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<title>Redirecting…</title>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<title>Pockio - Secure Share</title>
+<style>
+  html,body{margin:0;min-height:100%;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f8fafc;color:#0f172a}
+  .hidden{display:none!important}
+  svg{max-width:24px;max-height:24px}
+  .fallback-shell{min-height:100vh;display:grid;place-items:center;padding:24px;box-sizing:border-box}
+  .fallback-card{width:min(420px,100%);padding:28px;border:1px solid rgba(15,118,110,.14);border-radius:20px;background:#fff;box-shadow:0 20px 48px rgba(15,118,110,.10);text-align:center}
+  .fallback-icon{width:54px;height:54px;margin:0 auto 14px;border-radius:16px;display:grid;place-items:center;background:#ecfdf5;color:#0f766e}
+  .fallback-title{margin:0 0 8px;font-size:20px;line-height:1.2;font-weight:800;color:#06132d}
+  .fallback-copy{margin:0;color:#64748b;font-size:14px;line-height:1.5}
+  .fallback-link{display:inline-flex;align-items:center;justify-content:center;height:40px;margin-top:18px;padding:0 18px;border-radius:999px;background:#137b77;color:#fff;text-decoration:none;font-weight:700;font-size:13px}
+</style>
 <script>
-// GitHub Pages 404 redirect - catches public share paths and forwards to backend.
-// api.txt contains the live backend URL (updated by start.bat every launch).
-(async function() {
-  // 1. Load backend URL from api.txt
-  let backend = '';
-  try {
-    const r = await fetch('/api.txt', { cache: 'no-store' });
-    if (r.ok) {
-      const t = (await r.text()).trim();
-      if (t.startsWith('http')) backend = t.replace(/\/$/, '');
-    }
-  } catch(e) {}
-
-  if (!backend) {
-    document.getElementById('msg').textContent =
-      'Backend is offline. Start the backend first, then try the link again.';
+(async function(){
+  const shareMatch = location.pathname.match(/^\/(?:share\/|file\/d\/)([A-Za-z0-9_-]{32,64})(?:\/view)?\/?$/);
+  if (!shareMatch) {
+    document.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('fallback-title').textContent = 'Page not found';
+      document.getElementById('fallback-copy').textContent = 'This Pockio link is incomplete or no longer exists.';
+    });
     return;
   }
 
-  // 2. Build the target URL: backend + same path + same query + same fragment.
-  //    New links use /file/d/{id}/view?usp=sharing and do not carry secrets.
-  const path     = window.location.pathname;
-  const search   = window.location.search;
-  const fragment = window.location.hash;
-  const target   = backend + path + search + fragment;
+  window.__MPD_SHARE_ID__ = shareMatch[1];
+  window.__MPD_PUBLIC_SHARE_PATH__ = location.pathname + location.search + location.hash;
 
-  // 3. Redirect immediately
-  window.location.replace(target);
+  try {
+    const response = await fetch('/backend/share.html?v=20260521staticshare1', { cache: 'no-store' });
+    if (!response.ok) throw new Error('share shell unavailable');
+    let html = await response.text();
+    html = html
+      .replace(/href="\/static\//g, 'href="/backend/static/')
+      .replace(/src="\/static\//g, 'src="/backend/static/')
+      .replace(/content:url\('\/static\//g, "content:url('/backend/static/");
+    document.open();
+    document.write(html);
+    document.close();
+  } catch (error) {
+    document.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('fallback-title').textContent = 'Share page unavailable';
+      document.getElementById('fallback-copy').textContent = 'Pockio could not load the secure share viewer. Please try again in a moment.';
+    });
+  }
 })();
 </script>
 </head>
-<body style="font-family:system-ui,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;background:#f9fafb;margin:0">
-  <div style="text-align:center;max-width:360px;padding:2rem">
-    <div style="font-size:3rem;margin-bottom:1rem">☁️</div>
-    <h2 style="color:#111827;font-size:1.25rem;font-weight:700;margin:0 0 0.5rem">MyPocketDrive</h2>
-    <p id="msg" style="color:#6b7280;font-size:0.875rem">Connecting to backend…</p>
-  </div>
+<body>
+  <main class="fallback-shell" aria-live="polite">
+    <section class="fallback-card">
+      <div class="fallback-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none"><path d="M7 11V8a5 5 0 0 1 10 0v3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M6 11h12v10H6V11Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg>
+      </div>
+      <h1 id="fallback-title" class="fallback-title">Loading secure share...</h1>
+      <p id="fallback-copy" class="fallback-copy">Preparing Pockio's encrypted file viewer.</p>
+      <a class="fallback-link" href="https://mypocketdrive.online/">Go to Pockio</a>
+    </section>
+  </main>
 </body>
 </html>
