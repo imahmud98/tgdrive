@@ -203,7 +203,7 @@ function renderFiles(){
     bindPreviewOpen(row,idx);
     if(State.viewMode==='grid'){
       const thumb=document.createElement('div');thumb.className='fr-thumb-wrap';
-      const placeholder=document.createElement('span');placeholder.className='thumb-placeholder';placeholder.innerHTML=imageIconSvg();
+      const placeholder=document.createElement('span');placeholder.className='thumb-placeholder';placeholder.innerHTML=fileTypeIconSvg(entry.original_name||'');
       thumb.appendChild(placeholder);
       const cbWrap=document.createElement('div');cbWrap.className='share-grid-select-wrap';
       const cb=document.createElement('input');cb.type='checkbox';cb.className='share-select-cb grid-file-cb';cb.checked=selected;cb.setAttribute('aria-label',`Select ${entry.original_name||'File'}`);
@@ -228,7 +228,7 @@ function renderFiles(){
       header.appendChild(allCb);header.appendChild(hName);header.appendChild(hDate);header.appendChild(hSize);header.appendChild(hPad);
       list.appendChild(header);
     }
-    const icon=document.createElement('span');icon.className='thumb-placeholder';icon.innerHTML=imageIconSvg();
+    const icon=document.createElement('span');icon.className='thumb-placeholder';icon.innerHTML=fileTypeIconSvg(entry.original_name||'');
     const cb=document.createElement('input');cb.type='checkbox';cb.className='share-select-cb';cb.checked=selected;cb.setAttribute('aria-label',`Select ${entry.original_name||'File'}`);
     cb.addEventListener('click',e=>e.stopPropagation());
     cb.addEventListener('change',e=>toggleSharedEntrySelection(entry,idx,e.target.checked));

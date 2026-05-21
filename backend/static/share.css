@@ -12,7 +12,7 @@
 .public-share-page .text-center{text-align:center;}
 .public-share-page .space-y-0\.5>*+*{margin-top:2px;}
 .public-share-page .hd-logo{cursor:default;}
-.public-share-page .hd-logo-img{content:url('logo_true_vector_backgroundless.svg');}
+.public-share-page .hd-logo-img{content:url('pockio_exact_no_change.svg');}
 .public-share-page .hd-search-wrap input{pointer-events:auto;}
 .public-share-page .hd-search-clear,.public-share-page .hd-search-suggestions{display:none!important;}
 .public-signin-btn{height:42px;display:inline-flex;align-items:center;gap:10px;padding:0 18px 0 12px;border:1px solid rgba(20,184,166,.22);border-radius:999px;background:linear-gradient(180deg,#ffffff,#f5fffc);color:#063f42;text-decoration:none;font-family:'Plus Jakarta Sans','Poppins',sans-serif;font-size:13px;font-weight:800;box-shadow:0 12px 28px rgba(13,109,110,.09);transition:background .16s,color .16s,transform .16s,box-shadow .16s,border-color .16s;}
@@ -79,7 +79,8 @@
 .public-share-page .share-signup-promo{position:fixed;right:24px;bottom:24px;z-index:120;width:330px;display:grid;grid-template-columns:44px minmax(0,1fr);gap:12px;padding:16px;border:1px solid rgba(15,118,110,.14);border-radius:18px;background:rgba(255,255,255,.96);box-shadow:0 18px 42px rgba(15,118,110,.10);}
 .public-share-page .promo-icon{width:44px;height:44px;border-radius:14px;display:grid;place-items:center;background:#ecfdf5;color:#0f766e;}
 .public-share-page .promo-icon svg{width:30px;height:30px;}
-.public-share-page .share-signup-promo h2{margin:2px 0 0;color:#06132d;font-family:'Inter',system-ui,sans-serif;font-size:12.75px;font-weight:520;line-height:1.2;letter-spacing:0;white-space:nowrap;}
+.public-share-page .share-signup-promo>div{min-width:0;}
+.public-share-page .share-signup-promo h2{margin:2px 0 0;color:#06132d;font-family:'Inter',system-ui,sans-serif;font-size:12.75px;font-weight:520;line-height:1.2;letter-spacing:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .public-share-page .promo-cta{grid-column:1/-1;height:42px;border-radius:999px;background:#137b77;color:#fff;text-decoration:none;display:flex;align-items:center;justify-content:center;font:600 14px/1 'Inter',system-ui,sans-serif;}
 .public-share-page .promo-cta:hover,.public-share-page .promo-cta:focus-visible{background:#0f6d69;outline:none;}
 .public-share-page #toast{display:none;position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:200;color:#fff;background:#0D6D6E;font-size:14px;padding:10px 20px;border-radius:999px;box-shadow:0 14px 35px rgba(0,0,0,.18);}
