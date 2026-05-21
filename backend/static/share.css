@@ -34,10 +34,27 @@
 .public-share-page .state-icon svg{width:28px;height:28px;}
 .public-share-page .share-state h1{font-family:'Plus Jakarta Sans','Poppins',sans-serif;font-size:22px;line-height:1.2;margin:0 0 8px;color:#06132d;}
 .public-share-page .share-state p{margin:0 0 18px;color:#637083;font-size:14px;}
-.public-share-page .password-card input{width:100%;height:44px;border:1px solid rgba(15,118,110,.22);border-radius:13px;padding:0 14px;margin:12px 0;font:500 14px/1 'Inter',sans-serif;}
+.public-share-page .password-card input{width:100%;height:52px;border:1px solid #dbe3ee;border-radius:4px;padding:0 14px;margin:8px 0 0;font:500 14px/1 'Inter',sans-serif;color:#1f2937;background:#fff;box-sizing:border-box;}
 .public-share-page .btn{height:40px;display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:13px;background:linear-gradient(180deg,#20c7b7,#0f9d92);color:#fff;padding:0 18px;text-decoration:none;font-weight:800;cursor:pointer;}
 .public-share-page .btn-ghost{background:#fff;color:#0f766e;border:1px solid rgba(15,118,110,.18);}
 .public-share-page .err{background:#fef2f2;border:1px solid #fecaca;border-radius:12px;padding:10px 12px;color:#dc2626;font-size:13px;text-align:left;}
+body.share-password-gated.public-share-page #app-header,
+body.share-password-gated.public-share-page #app-sidebar,
+body.share-password-gated.public-share-page #panel-files,
+body.share-password-gated.public-share-page .share-signup-promo{filter:blur(5px);pointer-events:none;user-select:none;}
+body.share-password-gated.public-share-page #app-content{overflow:hidden;}
+.public-share-page #panel-password.password-card{position:fixed!important;inset:0!important;z-index:15000!important;display:grid!important;place-items:center!important;width:auto!important;max-width:none!important;margin:0!important;padding:24px!important;border:0!important;border-radius:0!important;background:rgba(0,0,0,.68)!important;box-shadow:none!important;text-align:left!important;}
+.public-share-page #panel-password.password-card.hidden{display:none!important;}
+.public-share-page .password-modal-card{width:min(476px,calc(100vw - 32px));overflow:hidden;border-radius:8px;background:#fff;box-shadow:0 24px 70px rgba(0,0,0,.28);}
+.public-share-page .password-modal-head{height:82px;padding:0 24px;display:flex;align-items:center;justify-content:space-between;gap:18px;border-bottom:1px solid #e5e7eb;}
+.public-share-page .password-modal-head h1{margin:0!important;color:#1f2937!important;font-family:'Poppins',system-ui,sans-serif!important;font-size:20px!important;font-weight:600!important;line-height:1.2!important;}
+.public-share-page .password-modal-lock{width:38px;height:38px;border-radius:9px;display:grid;place-items:center;background:#f1f3f5;color:#6b7280;flex:0 0 auto;}
+.public-share-page .password-modal-lock svg{width:25px;height:25px;}
+.public-share-page .password-modal-body{padding:26px 24px 18px;}
+.public-share-page .password-modal-body p{margin:0 0 22px!important;color:#98a2b3!important;font:500 17px/1.35 'Inter',system-ui,sans-serif!important;text-align:left!important;}
+.public-share-page .password-modal-body label{display:block;margin:0 0 8px;color:#697386;font:700 15px/1.25 'Inter',system-ui,sans-serif;}
+.public-share-page .password-modal-actions{padding:0 24px 24px;display:flex;justify-content:flex-end;}
+.public-share-page .password-modal-actions .btn{height:52px;border-radius:4px;background:#1a73e8;padding:0 28px;font:700 16px/1 'Inter',system-ui,sans-serif;box-shadow:none;}
 .public-share-page #panel-files .drive-tb{flex-shrink:0;}
 .public-share-page #share-label{font-family:'Poppins',system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif!important;font-size:22px!important;line-height:1.2!important;font-weight:500!important;color:#0f766e!important;letter-spacing:0!important;}
 .public-share-page #drop-zone{position:relative;}

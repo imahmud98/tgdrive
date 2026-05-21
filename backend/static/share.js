@@ -4,7 +4,14 @@ function fileIcon(n){const e=(n||'').split('.').pop().toLowerCase();if(e==='pdf'
 function fmtSize(b){b=Number(b||0);if(b<1024)return b+' B';if(b<1048576)return(b/1024).toFixed(1)+' KB';if(b<1073741824)return(b/1048576).toFixed(1)+' MB';return(b/1073741824).toFixed(2)+' GB'}
 function fmtDate(iso){if(!iso)return'';const d=new Date(iso);return d.toLocaleString(undefined,{year:'numeric',month:'short',day:'numeric',hour:'2-digit',minute:'2-digit'})}
 let _tt;function toast(msg,type='info'){const el=document.getElementById('toast');el.style.background=type==='error'?'#dc2626':type==='success'?'#16a34a':'#0D6D6E';el.textContent=msg;el.style.display='block';clearTimeout(_tt);_tt=setTimeout(()=>{el.style.display='none'},4000)}
-function showPanel(name){['loading','error','password','files'].forEach(p=>{const el=document.getElementById('panel-'+p);if(el)el.classList.toggle('hidden',p!==name)})}
+function showPanel(name){
+ const passwordMode=name==='password';
+ ['loading','error','password','files'].forEach(p=>{
+  const el=document.getElementById('panel-'+p);
+  if(el)el.classList.toggle('hidden',passwordMode?!(p==='password'||p==='files'):p!==name);
+ });
+ document.body.classList.toggle('share-password-gated',passwordMode);
+}
 function showError(title,msg){document.getElementById('error-title').textContent=title;document.getElementById('error-msg').textContent=msg;showPanel('error')}
 function getStoredAccessToken(){try{return localStorage.getItem('mpd_access_token')||''}catch(_){return''}}
 
@@ -15,7 +22,7 @@ const ShareCrypto={
  async decryptBlob(encryptedBlob,fileKeyRaw){const buf=new Uint8Array(encryptedBlob);if(buf.length<28)throw new Error('Encrypted blob is corrupted');const iv=buf.slice(16,28);const ct=buf.slice(28);const cryptoKey=await crypto.subtle.importKey('raw',fileKeyRaw,{name:'AES-GCM',length:256},false,['decrypt']);return crypto.subtle.decrypt({name:'AES-GCM',iv},cryptoKey,ct)}
 };
 
-const State={shareId:null,shareMeta:null,shareKey:null,rawShareKey:null,apiBase:'',searchQuery:'',viewMode:'grid',selectedIds:new Set()};
+const State={shareId:null,shareMeta:null,shareKey:null,rawShareKey:null,apiBase:'',searchQuery:'',viewMode:'grid',selectedIds:new Set(),passwordGate:false};
 const SharePreviewRuntime={objectUrl:null,mode:'idle',text:'',entry:null};
 const SHARE_ID_RE=/^[A-Za-z0-9_-]{32,64}$/;
 const SHARE_KEY_RE=/^(pw|[A-Za-z0-9_-]{16,256})$/;
@@ -107,13 +114,13 @@ async function loadShareMeta(){
   if(!res.ok){showError('Error','Could not load share info. Try again.');return}
   State.shareMeta=await res.json();
   wireShareAuthLinks((new URLSearchParams(location.search).get('k')||location.hash.replace('#','')||'').trim());
-  if(State.shareMeta.is_password_protected&&!State.shareKey){showPanel('password');return}
+  if(State.shareMeta.is_password_protected&&!State.shareKey){State.passwordGate=true;renderFiles();showPanel('password');setTimeout(()=>document.getElementById('share-password')?.focus(),60);return}
   if(!State.shareKey){showError('Password required','This protected link does not include encryption keys. Ask the owner for the password, or request a new password-protected link.');return}
   renderFiles();
  }catch(e){showError('Network error','Could not reach server: '+e.message)}
 }
 
-async function handlePasswordSubmit(){const pw=document.getElementById('share-password').value.trim();const errEl=document.getElementById('pw-err');const btn=document.getElementById('pw-btn');if(!pw){errEl.textContent='Please enter the password';errEl.classList.remove('hidden');return}errEl.classList.add('hidden');btn.disabled=true;btn.innerHTML='<span class="spinner"></span> Unlocking';try{State.shareKey=await ShareCrypto.deriveShareKeyFromPassword(pw,State.shareMeta.kdf_params);const first=State.shareMeta.wrapped_keys[0];await ShareCrypto.unwrapFileKey(first.wrapped_file_key,first.key_iv,State.shareKey);renderFiles()}catch(e){errEl.textContent='Wrong password or corrupted link';errEl.classList.remove('hidden');btn.disabled=false;btn.textContent='Unlock'}}
+async function handlePasswordSubmit(){const pw=document.getElementById('share-password').value.trim();const errEl=document.getElementById('pw-err');const btn=document.getElementById('pw-btn');if(!pw){errEl.textContent='Please enter the password';errEl.classList.remove('hidden');return}errEl.classList.add('hidden');btn.disabled=true;btn.innerHTML='<span class="spinner"></span> Unlocking';try{State.shareKey=await ShareCrypto.deriveShareKeyFromPassword(pw,State.shareMeta.kdf_params);const first=State.shareMeta.wrapped_keys[0];await ShareCrypto.unwrapFileKey(first.wrapped_file_key,first.key_iv,State.shareKey);State.passwordGate=false;renderFiles()}catch(e){errEl.textContent='Wrong password or corrupted link';errEl.classList.remove('hidden');btn.disabled=false;btn.textContent='Unlock'}}
 
 function downloadIconSvg(){return '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 4v10m0 0 4-4m-4 4-4-4M5 20h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>'}
 function imageIconSvg(){return '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="3.5" y="5" width="17" height="14" rx="2.4" stroke="currentColor" stroke-width="1.8"/><path d="m6.7 16 3.6-3.6a1.2 1.2 0 0 1 1.7 0l2.1 2.1.9-.9a1.2 1.2 0 0 1 1.7 0L20 17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><circle cx="8.7" cy="9" r="1.2" fill="currentColor"/></svg>'}
@@ -160,6 +167,7 @@ function renderFiles(){
   const meta=State.shareMeta;
   const entries=Array.isArray(meta.wrapped_keys)?meta.wrapped_keys:[];
   const single=entries.length===1;
+  const locked=State.passwordGate&&!State.shareKey;
   document.body.classList.toggle('single-share-page',single);
   const panel=document.getElementById('panel-files');
   panel.classList.toggle('single-share',single);
@@ -180,7 +188,7 @@ function renderFiles(){
     State.selectedIds.clear();
     renderSinglePreview(entries[0],list);
     showPanel('files');
-    setTimeout(()=>loadSinglePreview(0),30);
+    if(!locked)setTimeout(()=>loadSinglePreview(0),30);
     return;
   }
   const q=State.searchQuery;

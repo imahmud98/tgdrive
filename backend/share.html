@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@700;800&family=Poppins:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 <link rel="stylesheet" href="/static/app-shell.css?v=20260521staticshare1">
-<link rel="stylesheet" href="/static/share.css?v=20260521sharestyle1">
+<link rel="stylesheet" href="/static/share.css?v=20260521sharepass1">
 <style>
 html,body{margin:0;height:100%;overflow:hidden}
 .hidden{display:none!important}
@@ -84,13 +84,22 @@ html,body{margin:0;height:100%;overflow:hidden}
         <a id="share-error-signin-link" class="btn btn-ghost" href="https://mypocketdrive.online/#/login">Sign in to Pockio</a>
       </section>
 
-      <section id="panel-password" class="share-state password-card hidden">
-        <div class="state-icon"><svg viewBox="0 0 24 24" fill="none"><path d="M7 11V8a5 5 0 0 1 10 0v3" stroke="currentColor" stroke-width="1.8"/><path d="M6 11h12v10H6V11Z" stroke="currentColor" stroke-width="1.8"/></svg></div>
-        <h1>Password required</h1>
-        <p>This encrypted share is password-protected.</p>
-        <div id="pw-err" class="err hidden"></div>
-        <input id="share-password" type="password" placeholder="Enter password"/>
-        <button class="btn" id="pw-btn">Unlock</button>
+      <section id="panel-password" class="share-state password-card hidden" aria-modal="true" role="dialog" aria-labelledby="password-title">
+        <div class="password-modal-card">
+          <div class="password-modal-head">
+            <h1 id="password-title">Unlock encrypted files</h1>
+            <span class="password-modal-lock" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M7 11V8a5 5 0 0 1 10 0v3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M6 11h12v10H6V11Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/></svg></span>
+          </div>
+          <div class="password-modal-body">
+            <p>Enter the share password to unlock these encrypted files.</p>
+            <label for="share-password">Share password</label>
+            <input id="share-password" type="password" placeholder=""/>
+            <div id="pw-err" class="err hidden"></div>
+          </div>
+          <div class="password-modal-actions">
+            <button class="btn" id="pw-btn">Unlock</button>
+          </div>
+        </div>
       </section>
 
       <section id="panel-files" class="app-section hidden flex-1 flex flex-col overflow-hidden">
@@ -152,6 +161,6 @@ html,body{margin:0;height:100%;overflow:hidden}
   </div>
 </div>
 <div id="toast"></div>
-<script src="/static/share.js?v=20260521sharestyle1" defer></script>
+<script src="/static/share.js?v=20260521sharepass1" defer></script>
 </body>
 </html>
