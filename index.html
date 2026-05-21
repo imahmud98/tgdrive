@@ -4806,7 +4806,7 @@ function _sharedStoredKey(shareId){
   }catch(_){return '';}
 }
 function _sharedIsPasswordProtected(item){
-  return !!(item && item.is_password_protected && item.kdf_params);
+  return !!(item && item.is_shared === true && item.is_password_protected && item.kdf_params && item.share_id);
 }
 function _sharedSessionKey(shareId){
   const keys=S.sharedShareKeys||(S.sharedShareKeys=new Map());
