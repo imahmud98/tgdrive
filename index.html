@@ -4882,6 +4882,16 @@ async function ensureSharedShareUnlocked(item){
   if(!key)throw new Error('Share password required.');
   return key;
 }
+async function ensureSharedItemsUnlocked(items){
+  const seen=new Set();
+  for(const item of (items||[])){
+    if(!_sharedIsPasswordProtected(item))continue;
+    const sid=String(item.share_id||'');
+    if(!sid||seen.has(sid)||_sharedSessionKey(sid))continue;
+    seen.add(sid);
+    await ensureSharedShareUnlocked(item);
+  }
+}
 async function _sharedCryptoKeyForItem(item){
   const key=_sharedStoredKey(item.share_id);
   if(key&&key!=='pw')return await _sharedImportShareKey(key);
@@ -5042,6 +5052,12 @@ async function openSharedPreview(item){
   if(!item)return;
   const file={...item,is_shared:true,name:_sharedDownloadName(item),_nas:String(item.storage_type||'cloud').toLowerCase()==='nas'};
   const eligibility=getPreviewEligibility(file);
+  try{
+    if(eligibility.supported)await ensureSharedItemsUnlocked([file]);
+  }catch(e){
+    if(e&&e.message&&e.message!=='Share password required.')toast(userSafeErrorMessage(e,'Could not unlock shared file.'),'error');
+    return;
+  }
   _previewResetResources();
   PreviewState.file=file;
   PreviewState.reason=eligibility.reason||'';
@@ -11670,6 +11686,12 @@ function clearSharedSel(){
 async function downloadSelectedShared(){
   const items=sharedSelectedItems();
   if(!items.length){toast('Select shared files first','info');return;}
+  try{
+    await ensureSharedItemsUnlocked(items);
+  }catch(e){
+    if(e&&e.message&&e.message!=='Share password required.')toast(userSafeErrorMessage(e,'Could not unlock shared files.'),'error');
+    return;
+  }
   const dirHandle=await _pickSaveDir();
   if(dirHandle===false)return;
   S.downloadQueue=items.map(item=>({
@@ -11688,6 +11710,12 @@ async function downloadSelectedShared(){
 async function addSelectedSharedToDrive(){
   const items=sharedSelectedItems();
   if(!items.length){toast('Select shared files first','info');return;}
+  try{
+    await ensureSharedItemsUnlocked(items);
+  }catch(e){
+    if(e&&e.message&&e.message!=='Share password required.')toast(userSafeErrorMessage(e,'Could not unlock shared files.'),'error');
+    return;
+  }
   toast(`Preparing ${items.length} shared file${items.length===1?'':'s'} for your drive...`);
   showModal('upload-modal');
   const addedSharedIds=new Set();
@@ -11750,6 +11778,7 @@ async function downloadSharedItem(id){
   const item=S.sharedWithMe.find(x=>String(x.id)===String(id));
   if(!item)return;
   try{
+    await ensureSharedItemsUnlocked([item]);
     toast('Preparing shared download...');
     const blob=await _sharedPlainBlob(item);
     await _saveSharedBlob(item,blob);
