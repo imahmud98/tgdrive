@@ -12806,13 +12806,6 @@ const ShareState = {
 
 // Ã¢"â‚¬Ã¢"â‚¬ Open share dialog Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬Ã¢"â‚¬
 async function openShareDialog(fileIds, folderId=null) {
-  if (!S._password) {
-    const unlocked = await ensureEncryptionUnlocked('share encrypted files');
-    if (!unlocked) {
-      toast('Unlock encryption to share these files.', 'error');
-      return;
-    }
-  }
   ShareState.pendingFileIds = fileIds;
   ShareState.pendingFolderId = folderId;
   ShareState.generatedLink = null;
@@ -13045,9 +13038,16 @@ async function generateShareLink() {
       shareKeyCryptoKey = cryptoKey;
     }
 
-    // 2. Get the user's FileKey (extractable copy for wrapping)
-    const fileKeyCryptoKey = await _getCurrentFileKeyCryptoKey();
-    const fileKeyRaw = await ShareKeyMgr.exportCryptoKey(fileKeyCryptoKey);
+    let fileKeyRawPromise = null;
+    const getLegacyFileKeyRaw = async () => {
+      if (!fileKeyRawPromise) {
+        fileKeyRawPromise = (async () => {
+          const fileKeyCryptoKey = await _getCurrentFileKeyCryptoKey();
+          return await ShareKeyMgr.exportCryptoKey(fileKeyCryptoKey);
+        })();
+      }
+      return await fileKeyRawPromise;
+    };
 
     // 3. Wrap FileKey(s) - one wrapped copy per file
     //    (All files encrypted with same user FileKey, so one wrap covers all)
@@ -13058,15 +13058,19 @@ async function generateShareLink() {
                          await api('GET', `/files`).then(r => (r?.files||r||[]).find(f => String(f.id) === String(fileId)));
       if (!fileRecord) throw new Error(`File ${fileId} not found`);
 
-      let keyMaterialRaw = fileKeyRaw;
-      let keyMaterial = 'legacy_file_key';
+      let keyMaterialRaw = crypto.getRandomValues(new Uint8Array(32));
+      let keyMaterial = fileRecord._nas ? 'nas_transport_only' : 'legacy_file_key';
       let storageVersion = fileRecord.storage_version || '';
-      if (!fileRecord._nas) {
+      if (fileRecord._nas) {
+        storageVersion = storageVersion || 'nas';
+      } else {
         const directInfo = await api('GET', `/files/direct-upload/${fileId}/download-url`).catch(() => null);
         if (directInfo && directInfo.storage_version === 'client_e2ee_s3') {
           storageVersion = 'client_e2ee_s3';
           keyMaterialRaw = await _exportDirectCloudShareWrapKey(directInfo.encryption_manifest || {});
           keyMaterial = 'direct_cloud_wrap_key';
+        } else {
+          keyMaterialRaw = await getLegacyFileKeyRaw();
         }
       }
       const { wrapped_file_key, key_iv } = await ShareKeyMgr.wrapFileKey(keyMaterialRaw, shareKeyCryptoKey);
