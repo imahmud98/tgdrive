@@ -30,7 +30,7 @@
   window.__MPD_PUBLIC_SHARE_PATH__ = location.pathname + location.search + location.hash;
 
   try {
-    const response = await fetch('/backend/share.html?v=20260521staticshare1', { cache: 'no-store' });
+    const response = await fetch('/backend/share.html?v=20260521sharestyle1', { cache: 'no-store' });
     if (!response.ok) throw new Error('share shell unavailable');
     let html = await response.text();
     html = html
