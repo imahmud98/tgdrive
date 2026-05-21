@@ -2662,6 +2662,7 @@ const S={
   _initAppRunning:false,
   folders:[],currentFolder:null,folderPath:[],files:[],sharedWithMe:[],
   selectedIds:new Set(),sharedSelectedIds:new Set(),
+  sharedShareKeys:new Map(),
   uploadQueue:[],isUploading:false,
   downloadQueue:[],isDownloading:false,
   savedDirHandle:null,
@@ -3132,6 +3133,7 @@ function logout(){
   }catch(e){}
   if(S.sessionTimer)clearInterval(S.sessionTimer);
   S.token=null;S.user=null;S._password=null;
+  S.sharedShareKeys=new Map();
   S._initAppRunning=false;
   S.savedDirHandle=null;
   E2E.clearCache();
@@ -4803,10 +4805,89 @@ function _sharedStoredKey(shareId){
     return SHARE_KEY_RE.test(key)?key:'';
   }catch(_){return '';}
 }
+function _sharedIsPasswordProtected(item){
+  return !!(item && item.is_password_protected && item.kdf_params);
+}
+function _sharedSessionKey(shareId){
+  const keys=S.sharedShareKeys||(S.sharedShareKeys=new Map());
+  return keys.get(String(shareId||''))||null;
+}
+function _sharedIsLocked(item){
+  if(!_sharedIsPasswordProtected(item))return false;
+  return !_sharedSessionKey(item.share_id);
+}
+function _sharedLockIcon(){
+  return '<svg class="pk-file-icon pk-file-icon-lock" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M7.5 10V7.8a4.5 4.5 0 0 1 9 0V10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><rect x="5.5" y="10" width="13" height="10" rx="2.4" stroke="currentColor" stroke-width="1.8"/><path d="M12 14v2.5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>';
+}
+function _sharedDisplayIcon(item){
+  return _sharedIsLocked(item)?_sharedLockIcon():fileIcon(item?.name||item?.filename||'');
+}
+let _sharedPasswordUnlockPromise=null;
+let _sharedPasswordUnlockResolve=null;
+let _sharedPasswordUnlockItem=null;
+function _setSharedPasswordError(msg){
+  const el=document.getElementById('shared-password-err');
+  if(!el)return;
+  if(msg){el.textContent=msg;el.classList.remove('hidden');}
+  else{el.textContent='';el.classList.add('hidden');}
+}
+function _cancelSharedPasswordUnlock(){
+  hideModal('shared-password-modal');
+  const input=document.getElementById('shared-password-input');
+  if(input)input.value='';
+  _setSharedPasswordError('');
+  if(_sharedPasswordUnlockResolve)_sharedPasswordUnlockResolve(null);
+}
+async function _handleSharedPasswordUnlock(e){
+  e.preventDefault();
+  const item=_sharedPasswordUnlockItem;
+  const input=document.getElementById('shared-password-input');
+  const btn=document.getElementById('shared-password-btn');
+  const password=String(input?.value||'').trim();
+  if(!password){_setSharedPasswordError('Enter the share password.');return;}
+  if(!item?.kdf_params){_setSharedPasswordError('This shared file is missing password metadata. Ask the owner for a new link.');return;}
+  if(btn){btn.disabled=true;btn.textContent='Unlocking...';}
+  _setSharedPasswordError('');
+  try{
+    const shareKey=await ShareKeyMgr.deriveFromPassword(password,item.kdf_params);
+    if(!item.wrapped_file_key||!item.key_iv)throw new Error('missing encrypted file metadata');
+    await crypto.subtle.decrypt({name:'AES-GCM',iv:_sharedB64UrlToBytes(item.key_iv)},shareKey,_sharedB64UrlToBytes(item.wrapped_file_key));
+    (S.sharedShareKeys||(S.sharedShareKeys=new Map())).set(String(item.share_id),shareKey);
+    if(input)input.value='';
+    hideModal('shared-password-modal');
+    renderSharedWithMe();
+    if(_sharedPasswordUnlockResolve)_sharedPasswordUnlockResolve(shareKey);
+  }catch(err){
+    _setSharedPasswordError('Wrong password or corrupted share link.');
+  }finally{
+    if(btn){btn.disabled=false;btn.textContent='Unlock';}
+  }
+}
+async function ensureSharedShareUnlocked(item){
+  if(!_sharedIsPasswordProtected(item))return null;
+  const existing=_sharedSessionKey(item.share_id);
+  if(existing)return existing;
+  if(_sharedPasswordUnlockPromise)return _sharedPasswordUnlockPromise;
+  _sharedPasswordUnlockItem=item;
+  _setSharedPasswordError('');
+  const input=document.getElementById('shared-password-input');
+  if(input)input.value='';
+  _sharedPasswordUnlockPromise=new Promise(resolve=>{_sharedPasswordUnlockResolve=resolve;});
+  showModal('shared-password-modal');
+  setTimeout(()=>document.getElementById('shared-password-input')?.focus(),50);
+  const key=await _sharedPasswordUnlockPromise;
+  _sharedPasswordUnlockPromise=null;
+  _sharedPasswordUnlockResolve=null;
+  _sharedPasswordUnlockItem=null;
+  if(!key)throw new Error('Share password required.');
+  return key;
+}
 async function _sharedCryptoKeyForItem(item){
   const key=_sharedStoredKey(item.share_id);
-  if(!key||key==='pw')throw new Error('Open the original shared link once on this browser to unlock preview and download.');
-  return await _sharedImportShareKey(key);
+  if(key&&key!=='pw')return await _sharedImportShareKey(key);
+  if(_sharedIsPasswordProtected(item))return await ensureSharedShareUnlocked(item);
+  if(key==='pw')throw new Error('Enter the share password to unlock this shared file.');
+  throw new Error('Open the original shared link once on this browser to unlock preview and download.');
 }
 async function _sharedUnwrapFileKey(item){
   if(!item?.wrapped_file_key||!item?.key_iv)throw new Error('This shared item is missing encryption metadata.');
@@ -4917,6 +4998,7 @@ async function _sharedResponseArrayBuffer(res,onProgress=null){
   return out.buffer;
 }
 async function _sharedPlainBlob(item,onProgress=null){
+  if(_sharedIsPasswordProtected(item))await ensureSharedShareUnlocked(item);
   if(_isSharedDirectCloud(item))return await _sharedDirectCloudBlob(item,null,onProgress);
   const res=await fetch(`${API}/share/${encodeURIComponent(item.share_id)}/file/${encodeURIComponent(item.file_id)}`,{headers:_sharedHeaders()});
   if(!res.ok){
@@ -11500,6 +11582,7 @@ function _sharedItemUrl(item){
 const _sharedThumbCache = new Map();
 const SHARED_THUMB_MAX_BYTES = 12 * 1024 * 1024;
 function _sharedThumbEligible(item){
+  if(_sharedIsLocked(item))return false;
   const name=item?.name||item?.filename||'';
   const mime=String(item?.mime_type||'');
   if(!(mime.startsWith('image/')||isImageFile(name)))return false;
@@ -11702,8 +11785,8 @@ function renderSharedWithMe(){
       <div style="width:100%;aspect-ratio:1;background:#F2F2F7;display:flex;align-items:center;justify-content:center;overflow:hidden;color:var(--p);font-size:34px;position:relative;">
         ${hasThumb
           ?`<img data-shared-thumb-id="${esc(id)}" style="width:100%;height:100%;object-fit:cover;display:none" alt="${esc(name)}" onerror="this.style.display='none';this.nextElementSibling.style.cssText='display:flex;align-items:center;justify-content:center;width:100%;height:100%;font-size:36px;'"/>
-            <span style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;font-size:36px;">${fileIcon(name)}</span>`
-          :`<span style="font-size:36px;">${fileIcon(name)}</span>`}
+            <span style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;font-size:36px;">${_sharedDisplayIcon(item)}</span>`
+          :`<span style="font-size:36px;">${_sharedDisplayIcon(item)}</span>`}
         <div class="shared-grid-select-wrap">
           <input type="checkbox" ${sel?'checked':''} onchange="toggleSharedSel('${esc(id)}')" data-click="event.stopPropagation()"
             aria-label="Select ${esc(name)}" style="width:18px;height:18px;accent-color:#0D6D6E;opacity:${sel?'1':'0'};transition:opacity 0.15s;" class="grid-file-cb"/>
@@ -11738,9 +11821,9 @@ function renderSharedWithMe(){
       ${hasThumb
         ?`<div style="width:36px;height:36px;border-radius:8px;overflow:hidden;flex-shrink:0;background:#eef8f7;color:var(--p);display:flex;align-items:center;justify-content:center;font-size:20px;">
             <img data-shared-thumb-id="${esc(id)}" style="width:100%;height:100%;object-fit:cover;display:none" alt="${esc(name)}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'"/>
-            <span style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;">${fileIcon(name)}</span>
+            <span style="display:flex;align-items:center;justify-content:center;width:100%;height:100%;">${_sharedDisplayIcon(item)}</span>
           </div>`
-        :`<div style="width:36px;height:36px;border-radius:8px;flex-shrink:0;background:#eef8f7;color:var(--p);display:flex;align-items:center;justify-content:center;font-size:20px;">${fileIcon(name)}</div>`}
+        :`<div style="width:36px;height:36px;border-radius:8px;flex-shrink:0;background:#eef8f7;color:var(--p);display:flex;align-items:center;justify-content:center;font-size:20px;">${_sharedDisplayIcon(item)}</div>`}
       <div style="flex:1;min-width:0;"><div style="font-size:14px;font-weight:400;color:#202124;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${esc(name)}</div><div style="font-size:12px;color:#8b97a8;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">Shared by ${esc(ownerName)}${isMob?' - '+dateStr+' - '+fmtSize(item.size||0):''}</div></div>
       <span style="width:130px;font-size:13px;color:#5f6368;text-align:right;flex-shrink:0;${isMob?'display:none':''}">${dateStr}</span>
       <span style="width:80px;font-size:13px;color:#5f6368;text-align:right;flex-shrink:0;${isMob?'display:none':''}">${fmtSize(item.size||0)}</span>
@@ -12504,7 +12587,7 @@ async function handleResetEncryption(e){
       await _storeLocalRecoveryKeyBackup(v('rep-password'));
     }
     await resetEncryption(token,v('rep-password'));
-    S.token=null;S.user=null;S._password=null;S._pendingPassword=null;_setAccessToken(null);_setRefreshToken(null);E2E.clearCache();
+    S.token=null;S.user=null;S._password=null;S._pendingPassword=null;S.sharedShareKeys=new Map();_setAccessToken(null);_setRefreshToken(null);E2E.clearCache();
     document.getElementById('reset-encryption-success').classList.remove('hidden');
     document.getElementById('reset-encryption-form').classList.add('hidden');
     setTimeout(()=>{goTo('login');toast('Cloud encryption passphrase reset. Please sign in again.','success');},1800);
@@ -14601,6 +14684,27 @@ async function revokeShare(shareId) {
       <div class="flex gap-2 justify-end">
         <button type="button" data-click="cancelEncryptionUnlock()" class="btn-secondary">Cancel</button>
         <button id="unlock-encryption-btn" type="submit" class="btn-primary">Unlock</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="shared-password-modal" class="modal-wrap hidden">
+  <div class="modal-box" style="max-width:380px">
+    <div class="modal-hd">
+      <span class="modal-title">Unlock encrypted files</span>
+      <button class="modal-close" data-click="_cancelSharedPasswordUnlock()" aria-label="Close" title="Close"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+    </div>
+    <form onsubmit="_handleSharedPasswordUnlock(event)" class="px-5 py-5 space-y-4">
+      <p class="text-sm" style="color:var(--mute)">Enter the share password to unlock these encrypted files.</p>
+      <div>
+        <label class="f-label">Share password</label>
+        <input id="shared-password-input" type="password" autocomplete="current-password" class="f-input"/>
+      </div>
+      <div id="shared-password-err" class="hidden text-sm text-red-600 bg-red-50 border border-red-200 rounded-xl px-3 py-2.5"></div>
+      <div class="flex gap-2 justify-end">
+        <button type="button" data-click="_cancelSharedPasswordUnlock()" class="btn-secondary">Cancel</button>
+        <button id="shared-password-btn" type="submit" class="btn-primary">Unlock</button>
       </div>
     </form>
   </div>
